@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import TerminalTab from './TerminalTab';
 import './App.css';
+import pkg from '../package.json';
+import logo from '../build/icon.png';
 
 export default function App() {
+  const productName = pkg.build?.productName || "OmicronSSH";
+  const { version } = pkg;
   // Connections state
   const [connections, setConnections] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,6 +27,7 @@ export default function App() {
   
   // Sidebar state
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -261,10 +266,8 @@ export default function App() {
       <div className={`sidebar glass-panel ${isSidebarVisible ? '' : 'hidden'}`}>
         <div className="sidebar-header">
           <div className="logo-section">
-            <svg className="logo-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span>OmicronSSH</span>
+            <img src={logo} alt="Logo" className="logo-img" />
+            <span>{productName}</span>
           </div>
           <button className="add-conn-btn" onClick={handleOpenCreateModal} title="Add Connection">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -359,6 +362,14 @@ export default function App() {
               );
             })
           )}
+        </div>
+        <div className="sidebar-footer">
+          <button className="sidebar-about-btn" onClick={() => setIsAboutModalOpen(true)}>
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>About {productName}</span>
+          </button>
         </div>
       </div>
 
@@ -725,6 +736,52 @@ export default function App() {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+      {/* ABOUT MODAL OVERLAY */}
+      <div className={`modal-overlay ${isAboutModalOpen ? 'open' : ''}`}>
+        <div className="modal-container glass-panel about-modal">
+          <div className="modal-header">
+            <div className="modal-title">About {productName}</div>
+            <button className="modal-close-btn" onClick={() => setIsAboutModalOpen(false)}>
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="modal-body about-modal-body">
+            <div className="about-logo-wrapper">
+              <img src={logo} alt={`${productName} Logo`} className="about-logo-img" />
+            </div>
+            <h2>{productName}</h2>
+            <div className="about-version">Version {version}</div>
+            
+            <p className="about-description">
+              A premium, lightweight, glassmorphic desktop SSH & SFTP client for Linux. 
+              {productName} provides a tabbed interactive shell terminal alongside a standard 
+              file manager for secure transfers with real-time progress indicators.
+            </p>
+            
+            <div className="about-meta-grid">
+              <div className="about-meta-row">
+                <span className="about-meta-label">Creator</span>
+                <span className="about-meta-value">
+                  <a href="https://github.com/UatChathuranga" target="_blank" rel="noopener noreferrer">
+                    @UatChathuranga
+                  </a>
+                </span>
+              </div>
+              <div className="about-meta-row">
+                <span className="about-meta-label">License</span>
+                <span className="about-meta-value">MIT Open Source License</span>
+              </div>
+            </div>
+          </div>
+          <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 0 }}>
+            <button type="button" className="btn-primary" onClick={() => setIsAboutModalOpen(false)} style={{ width: '100%' }}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
