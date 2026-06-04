@@ -11,7 +11,9 @@ import {
   createConnection,
   updateConnection,
   deleteConnection,
-  bulkCreateConnections
+  bulkCreateConnections,
+  renameGroup,
+  deleteGroup
 } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -87,6 +89,32 @@ app.delete('/api/connections/:id', (req, res) => {
     const success = deleteConnection(req.params.id);
     if (!success) return res.status(404).json({ error: 'Connection not found' });
     res.json({ message: 'Connection deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/groups/rename', (req, res) => {
+  try {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName) {
+      return res.status(400).json({ error: 'oldName and newName are required' });
+    }
+    const updatedCount = renameGroup(oldName, newName);
+    res.json({ message: `Successfully renamed group. ${updatedCount} connections updated.`, updatedCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/groups', (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) {
+      return res.status(400).json({ error: 'Group name is required' });
+    }
+    const deletedCount = deleteGroup(name);
+    res.json({ message: `Successfully deleted group. ${deletedCount} connections removed.`, deletedCount });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -397,9 +425,32 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(port, () => {
-  console.log(`====================================================`);
-  console.log(`OmicronSSH Server is running on port ${port}`);
-  console.log(`Open http://localhost:${port} in your browser`);
-  console.log(`====================================================`);
+export const serverStarted = new Promise((resolve) => {
+  let currentPort = parseInt(port, 10) || 3000;
+  
+  function tryListen() {
+    const tempServer = server.listen(currentPort);
+    
+    tempServer.once('listening', () => {
+      const actualPort = server.address().port;
+      global.serverPort = actualPort;
+      console.log(`====================================================`);
+      console.log(`OmicronSSH Server is running on port ${actualPort}`);
+      console.log(`Open http://localhost:${actualPort} in your browser`);
+      console.log(`====================================================`);
+      resolve(actualPort);
+    });
+    
+    tempServer.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.log(`Port ${currentPort} is busy, trying port ${currentPort + 1}...`);
+        currentPort++;
+        tryListen();
+      } else {
+        console.error('Server listen error:', err);
+      }
+    });
+  }
+  
+  tryListen();
 });

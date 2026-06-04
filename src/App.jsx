@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import TerminalTab from './TerminalTab';
+import SplitTab from './SplitTab';
 import './App.css';
 import pkg from '../package.json';
 import logo from '../build/icon.png';
@@ -73,6 +74,10 @@ export default function App() {
   const [importError, setImportError] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
   
+  // Group inline renaming state
+  const [editingGroupName, setEditingGroupName] = useState(null);
+  const [newGroupInputValue, setNewGroupInputValue] = useState('');
+  
   const [formData, setFormData] = useState({
     name: '',
     host: '',
@@ -104,6 +109,69 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to fetch connections:', err);
+    }
+  };
+
+  const startRenameGroup = (groupName, e) => {
+    if (e) e.stopPropagation();
+    if (groupName === 'Default') {
+      alert("The 'Default' group cannot be renamed.");
+      return;
+    }
+    setEditingGroupName(groupName);
+    setNewGroupInputValue(groupName);
+  };
+
+  const saveGroupRename = async (oldName) => {
+    const trimmed = newGroupInputValue.trim();
+    if (!trimmed) {
+      alert("Group name cannot be empty.");
+      setEditingGroupName(null);
+      return;
+    }
+    if (trimmed.toLowerCase() === oldName.toLowerCase()) {
+      setEditingGroupName(null);
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/groups/rename', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName: trimmed })
+      });
+      if (!response.ok) {
+        throw new Error('Failed to rename group');
+      }
+      fetchConnections();
+    } catch (error) {
+      console.error(error);
+      alert('Error renaming group: ' + error.message);
+    } finally {
+      setEditingGroupName(null);
+    }
+  };
+
+  const handleDeleteGroup = async (groupName, e) => {
+    if (e) e.stopPropagation();
+    if (groupName === 'Default') {
+      alert("The 'Default' group cannot be deleted.");
+      return;
+    }
+    const confirmDelete = confirm(`Are you sure you want to delete the group "${groupName}"? This will delete all connections in this group.`);
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(`/api/groups?name=${encodeURIComponent(groupName)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to delete group');
+      }
+      fetchConnections();
+    } catch (error) {
+      console.error(error);
+      alert('Error deleting group: ' + error.message);
     }
   };
 
@@ -293,9 +361,150 @@ export default function App() {
     setActiveTabId(newTabId);
   };
 
+  const handleCreateSplitTab = () => {
+    const newTabId = `split-${Date.now()}`;
+    const newTab = {
+      id: newTabId,
+      title: 'Split Console',
+      type: 'split',
+      status: 'connected',
+      subTabs: []
+    };
+    setTabs([...tabs, newTab]);
+    setActiveTabId(newTabId);
+  };
+
+  const handleOpenGroupInSplit = (conns, groupName) => {
+    if (conns.length === 0) return;
+    
+    // Limit to 24 max
+    const targets = conns.slice(0, 24);
+    if (conns.length > 24) {
+      alert('A split tab can hold a maximum of 24 sessions. Only the first 24 servers in the group will be opened.');
+    }
+    
+    const subTabs = targets.map((conn, idx) => ({
+      id: `tab-${Date.now()}-${idx}-${conn.id}`,
+      title: conn.name,
+      type: 'terminal',
+      connectionId: conn.id,
+      status: 'connecting'
+    }));
+    
+    const newTabId = `split-${Date.now()}`;
+    const newTab = {
+      id: newTabId,
+      title: `${groupName} Grid`,
+      type: 'split',
+      status: 'connected',
+      subTabs
+    };
+    
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTabId);
+  };
+
+  const handleMoveTabToSplit = (termTabId, splitTabId) => {
+    const termTab = tabs.find(t => t.id === termTabId);
+    if (!termTab) return;
+
+    if (splitTabId === 'new') {
+      const newSplitTabId = `split-${Date.now()}`;
+      const newSplitTab = {
+        id: newSplitTabId,
+        title: 'Split Console',
+        type: 'split',
+        status: 'connected',
+        subTabs: [termTab]
+      };
+      setTabs(prev => prev.filter(t => t.id !== termTabId).concat(newSplitTab));
+      setActiveTabId(newSplitTabId);
+    } else {
+      setTabs(prev => prev.map(t => {
+        if (t.id === splitTabId) {
+          if (t.subTabs.length >= 24) {
+            alert('Maximum 24 sessions allowed per split tab.');
+            return t;
+          }
+          return { ...t, subTabs: [...t.subTabs, termTab] };
+        }
+        return t;
+      }).filter(t => t.id !== termTabId));
+      setActiveTabId(splitTabId);
+    }
+  };
+
+  const handleDetachTabFromSplit = (subTabId, splitTabId) => {
+    let detachedTab = null;
+    setTabs(prev => {
+      const updated = prev.map(t => {
+        if (t.id === splitTabId) {
+          detachedTab = t.subTabs.find(st => st.id === subTabId);
+          return {
+            ...t,
+            subTabs: t.subTabs.filter(st => st.id !== subTabId)
+          };
+        }
+        return t;
+      });
+      if (detachedTab) {
+        return [...updated, detachedTab];
+      }
+      return updated;
+    });
+  };
+
+  const handleCloseSubTab = (subTabId, splitTabId) => {
+    setTabs(prev => prev.map(t => {
+      if (t.id === splitTabId) {
+        return {
+          ...t,
+          subTabs: t.subTabs.filter(st => st.id !== subTabId)
+        };
+      }
+      return t;
+    }));
+  };
+
+  const handleAddSubTabToSplit = (termTabId, splitTabId) => {
+    const termTab = tabs.find(t => t.id === termTabId);
+    if (!termTab) return;
+    setTabs(prev => prev.map(t => {
+      if (t.id === splitTabId) {
+        if (t.subTabs.length >= 24) {
+          alert('Maximum 24 sessions allowed per split tab.');
+          return t;
+        }
+        return { ...t, subTabs: [...t.subTabs, termTab] };
+      }
+      return t;
+    }).filter(t => t.id !== termTabId));
+  };
+
+  const handleAddConnectionToSplit = (conn, splitTabId) => {
+    const newSubTabId = `tab-${Date.now()}`;
+    const newSubTab = {
+      id: newSubTabId,
+      title: conn.name,
+      type: 'terminal',
+      connectionId: conn.id,
+      status: 'connecting'
+    };
+    setTabs(prev => prev.map(t => {
+      if (t.id === splitTabId) {
+        if (t.subTabs.length >= 24) {
+          alert('Maximum 24 sessions allowed per split tab.');
+          return t;
+        }
+        return { ...t, subTabs: [...t.subTabs, newSubTab] };
+      }
+      return t;
+    }));
+  };
+
   const handleTabContextMenu = (e, tab) => {
     e.preventDefault();
-    if (tab.type !== 'terminal') return;
+    if (tab.type !== 'terminal' && tab.type !== 'split') return;
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
@@ -574,9 +783,67 @@ export default function App() {
                       <svg className={`group-arrow ${isCollapsed ? 'collapsed' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                       </svg>
-                      <span>{groupName}</span>
+                      {editingGroupName === groupName ? (
+                        <input
+                          type="text"
+                          className="group-rename-input"
+                          value={newGroupInputValue}
+                          onChange={(e) => setNewGroupInputValue(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onBlur={() => saveGroupRename(groupName)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              saveGroupRename(groupName);
+                            } else if (e.key === 'Escape') {
+                              setEditingGroupName(null);
+                            }
+                          }}
+                          autoFocus
+                        />
+                      ) : (
+                        <span>{groupName}</span>
+                      )}
                     </div>
-                    <span className="group-count">{conns.length}</span>
+                    <div className="group-actions">
+                      <span className="group-count">{conns.length}</span>
+                      <button
+                        type="button"
+                        className="group-action-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenGroupInSplit(conns, groupName);
+                        }}
+                        title={`Open all ${conns.length} servers in a split console tab`}
+                      >
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="12" height="12">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                        </svg>
+                      </button>
+                      {groupName !== 'Default' && (
+                        <>
+                          <button
+                            type="button"
+                            className="group-action-btn"
+                            onClick={(e) => startRenameGroup(groupName, e)}
+                            title={`Rename group "${groupName}"`}
+                          >
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="11" height="11">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className="group-action-btn delete-btn"
+                            onClick={(e) => handleDeleteGroup(groupName, e)}
+                            title={`Delete group "${groupName}"`}
+                          >
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="11" height="11">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                   
                   <div className={`group-list ${isCollapsed ? 'collapsed' : ''}`}>
@@ -664,7 +931,9 @@ export default function App() {
                 onContextMenu={(e) => handleTabContextMenu(e, tab)}
               >
                 <div className={`tab-status-glow ${tab.status}`} />
-                <span className="tab-title">{tab.title}</span>
+                <span className="tab-title">
+                  {tab.type === 'split' ? `${tab.title} (${tab.subTabs.length})` : tab.title}
+                </span>
                 <button
                   className="tab-close-btn"
                   onClick={(e) => handleCloseTab(tab.id, e)}
@@ -679,6 +948,11 @@ export default function App() {
             <button className="new-tab-btn" onClick={handleOpenNewDashboardTab} title="New Dashboard Tab">
               <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </button>
+            <button className="new-tab-btn new-split-tab-btn" onClick={handleCreateSplitTab} title="New Split Console Grid Tab">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
             </button>
           </div>
@@ -836,6 +1110,16 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+              ) : tab.type === 'split' ? (
+                <SplitTab
+                  tab={tab}
+                  connections={connections}
+                  otherTerminalTabs={tabs.filter(t => t.type === 'terminal')}
+                  onDetachTab={(subTabId) => handleDetachTabFromSplit(subTabId, tab.id)}
+                  onCloseSubTab={(subTabId) => handleCloseSubTab(subTabId, tab.id)}
+                  onAddSubTab={(subTabId) => handleAddSubTabToSplit(subTabId, tab.id)}
+                  onAddConnectionToSplit={(conn) => handleAddConnectionToSplit(conn, tab.id)}
+                />
               ) : (
                 <TerminalTab
                   tab={tab}
@@ -1051,7 +1335,7 @@ export default function App() {
         </div>
       </div>
 
-      {contextMenu && (
+       {contextMenu && (
         <div 
           className="tab-context-menu"
           style={{ 
@@ -1061,18 +1345,49 @@ export default function App() {
             zIndex: 9999
           }}
         >
-          <div 
-            className="context-menu-item"
-            onClick={() => {
-              handleDuplicateTab(contextMenu.tab);
-              setContextMenu(null);
-            }}
-          >
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-            </svg>
-            <span>Duplicate Session</span>
-          </div>
+          {contextMenu.tab.type === 'terminal' && (
+            <>
+              <div 
+                className="context-menu-item"
+                onClick={() => {
+                  handleDuplicateTab(contextMenu.tab);
+                  setContextMenu(null);
+                }}
+              >
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                </svg>
+                <span>Duplicate Session</span>
+              </div>
+              <div 
+                className="context-menu-item"
+                onClick={() => {
+                  handleMoveTabToSplit(contextMenu.tab.id, 'new');
+                  setContextMenu(null);
+                }}
+              >
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+                <span>Move to New Split Tab</span>
+              </div>
+              {tabs.filter(t => t.type === 'split').map((st, idx) => (
+                <div 
+                  key={st.id}
+                  className="context-menu-item"
+                  onClick={() => {
+                    handleMoveTabToSplit(contextMenu.tab.id, st.id);
+                    setContextMenu(null);
+                  }}
+                >
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Move to Split Tab ({st.subTabs.length})</span>
+                </div>
+              ))}
+            </>
+          )}
           <div 
             className="context-menu-item close"
             onClick={() => {

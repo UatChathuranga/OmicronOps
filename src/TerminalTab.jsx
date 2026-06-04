@@ -4,7 +4,7 @@ import { FitAddon } from 'xterm-addon-fit';
 import SftpExplorer from './SftpExplorer';
 import 'xterm/css/xterm.css';
 
-export default function TerminalTab({ tab, onStatusChange }) {
+export default function TerminalTab({ tab, onStatusChange, onRegisterSocket }) {
   const containerRef = useRef(null);
   const terminalRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -111,6 +111,14 @@ export default function TerminalTab({ tab, onStatusChange }) {
 
     const socket = new WebSocket(wsUrl);
     socketRef.current = socket;
+
+    if (onRegisterSocket) {
+      onRegisterSocket(tab.id, (data) => {
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({ type: 'data', data }));
+        }
+      });
+    }
 
     socket.onopen = () => {
       // Fit first to determine sizes
@@ -248,6 +256,9 @@ export default function TerminalTab({ tab, onStatusChange }) {
         terminalRef.current.dispose();
         terminalRef.current = null;
       }
+      if (onRegisterSocket) {
+        onRegisterSocket(tab.id, null);
+      }
     };
   }, []);
 
@@ -303,28 +314,79 @@ export default function TerminalTab({ tab, onStatusChange }) {
     }
   }, [viewMode, status]);
 
+  const getTerminalText = () => {
+    if (!terminalRef.current) return '';
+    const term = terminalRef.current;
+    const buffer = term.buffer.active;
+    let text = '';
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) {
+        text += line.translateToString(true) + '\n';
+      }
+    }
+    return text;
+  };
+
+  const handleSaveOutput = () => {
+    const text = getTerminalText();
+    if (!text) {
+      alert("Console buffer is empty.");
+      return;
+    }
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    const cleanName = (tab.title || 'console').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+    link.download = `terminal_${cleanName}_${dateStr}.txt`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="terminal-wrapper">
       {status === 'connected' && (
         <div className="terminal-mode-selector">
-          <button 
-            className={`mode-btn ${viewMode === 'terminal' ? 'active' : ''}`}
-            onClick={() => setViewMode('terminal')}
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            Console
-          </button>
-          <button 
-            className={`mode-btn ${viewMode === 'files' ? 'active' : ''}`}
-            onClick={() => setViewMode('files')}
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            Files (SFTP)
-          </button>
+          <div className="mode-selector-left">
+            <button 
+              className={`mode-btn ${viewMode === 'terminal' ? 'active' : ''}`}
+              onClick={() => setViewMode('terminal')}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Console
+            </button>
+            <button 
+              className={`mode-btn ${viewMode === 'files' ? 'active' : ''}`}
+              onClick={() => setViewMode('files')}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+              Files (SFTP)
+            </button>
+          </div>
+          <div className="mode-selector-right">
+            {viewMode === 'terminal' && (
+              <button 
+                className="mode-btn action-btn-save"
+                onClick={handleSaveOutput}
+                title="Save terminal console buffer output to a file"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20" />
+                </svg>
+                Save Output
+              </button>
+            )}
+          </div>
         </div>
       )}
 

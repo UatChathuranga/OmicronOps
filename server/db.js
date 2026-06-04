@@ -238,3 +238,29 @@ export function deleteConnection(id) {
   writeDB(filtered);
   return true;
 }
+
+export function renameGroup(oldName, newName) {
+  const connections = readDB();
+  let updatedCount = 0;
+  const updated = connections.map(conn => {
+    if ((conn.group || 'Default') === oldName) {
+      updatedCount++;
+      return { ...conn, group: newName || 'Default' };
+    }
+    return conn;
+  });
+  if (updatedCount > 0) {
+    writeDB(updated);
+  }
+  return updatedCount;
+}
+
+export function deleteGroup(groupName) {
+  const connections = readDB();
+  const filtered = connections.filter(conn => (conn.group || 'Default') !== groupName);
+  const deletedCount = connections.length - filtered.length;
+  if (deletedCount > 0) {
+    writeDB(filtered);
+  }
+  return deletedCount;
+}

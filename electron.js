@@ -6,9 +6,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import and start our Express/WebSocket server
-import('./server/server.js').catch(err => {
-  console.error('Failed to start OmicronSSH server:', err);
-});
+let serverPromise = import('./server/server.js')
+  .then(module => module.serverStarted)
+  .catch(err => {
+    console.error('Failed to start OmicronSSH server:', err);
+  });
 
 let mainWindow;
 
@@ -26,17 +28,13 @@ function createWindow() {
   // Remove the default window menu bar for a premium standalone feel
   mainWindow.setMenuBarVisibility(false);
 
-  // Wait briefly for Express server to start up and bind to port 3000
-  setTimeout(() => {
-    mainWindow.loadURL('http://localhost:3000').catch(err => {
-      console.error('Failed to load local server URL, retrying...', err);
-      setTimeout(() => {
-        mainWindow.loadURL('http://localhost:3000').catch(retryErr => {
-          console.error('Failed to load local server URL on retry:', retryErr);
-        });
-      }, 1500);
+  // Wait for Express server to start up and bind to a port
+  serverPromise.then(actualPort => {
+    if (!actualPort || !mainWindow) return;
+    mainWindow.loadURL(`http://localhost:${actualPort}`).catch(err => {
+      console.error(`Failed to load local server URL http://localhost:${actualPort}:`, err);
     });
-  }, 1200);
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;

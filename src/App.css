@@ -168,6 +168,57 @@
   border-radius: 10px;
 }
 
+.group-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  opacity: 0;
+}
+
+.group-header:hover .group-action-btn {
+  opacity: 0.6;
+}
+
+.group-action-btn:hover {
+  color: var(--accent-primary) !important;
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 1 !important;
+}
+
+.group-action-btn.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: var(--status-disconnected) !important;
+  opacity: 1 !important;
+}
+
+.group-rename-input {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--accent-primary);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  outline: none;
+  width: 140px;
+  height: 22px;
+  margin: -2px 0;
+  display: inline-block;
+}
+
 .group-list {
   margin-top: 4px;
   display: flex;
@@ -1012,11 +1063,36 @@
 /* Mode Selector (Console vs SFTP) */
 .terminal-mode-selector {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   background: rgba(15, 23, 42, 0.6);
   border-bottom: 1px solid var(--panel-border);
   padding: 6px 12px;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.mode-selector-left {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-selector-right {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn-save {
+  border: 1px solid rgba(99, 102, 241, 0.2) !important;
+  color: var(--accent-primary) !important;
+  background: rgba(99, 102, 241, 0.05) !important;
+}
+
+.action-btn-save:hover {
+  background: rgba(99, 102, 241, 0.15) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--text-primary) !important;
 }
 
 .mode-btn {
@@ -1809,4 +1885,379 @@
   padding: 10px 12px;
   border-radius: 6px;
   line-height: 1.4;
+}
+
+/* Split Console Tab Grid Layout & Controls */
+.split-tab-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #060913;
+}
+
+.broadcast-bar {
+  display: flex;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--panel-border);
+  align-items: center;
+  background: rgba(10, 15, 26, 0.4);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.broadcast-bar .select-all-btn {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.broadcast-form {
+  display: flex;
+  flex-grow: 1;
+  gap: 8px;
+}
+
+.broadcast-input {
+  flex-grow: 1;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.broadcast-send-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  padding: 8px 16px;
+  flex-shrink: 0;
+}
+
+.split-grid {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  flex-grow: 1;
+  overflow: hidden;
+  height: calc(100% - 56px);
+}
+
+.grid-1x1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.grid-1x2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+.grid-2x2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.grid-3x2 {
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.grid-4x2 {
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.split-grid-cell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  height: 100%;
+}
+
+.split-cell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid var(--panel-border);
+  flex-shrink: 0;
+}
+
+.split-cell-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-grow: 1;
+}
+
+.split-cell-broadcast-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.split-cell-broadcast-checkbox input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+}
+
+.split-cell-broadcast-checkbox .checkbox-label {
+  font-weight: 500;
+}
+
+.split-cell-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.split-cell-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.split-cell-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.split-cell-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.split-cell-btn svg {
+  opacity: 0.8;
+}
+
+.split-cell-btn.close-btn {
+  padding: 4px 6px;
+}
+
+.split-cell-btn.close-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.split-cell-terminal {
+  flex-grow: 1;
+  overflow: hidden;
+  position: relative;
+  background: #0a0d16;
+}
+
+.split-cell-terminal .terminal-wrapper {
+  height: 100%;
+}
+
+.split-cell-terminal .terminal-canvas {
+  height: calc(100% - 32px); /* Adjust based on mode selector visibility */
+}
+
+/* Empty Cell styling inside Split Grid */
+.add-console-cell {
+  border: 2px dashed rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.01);
+  backdrop-filter: blur(12px);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.add-console-cell:hover {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(99, 102, 241, 0.01);
+}
+
+.add-console-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 12px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.add-console-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.add-console-icon-small {
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.add-console-cell:hover .add-console-icon-small {
+  opacity: 0.8;
+  color: var(--accent-primary);
+}
+
+.add-console-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.add-console-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
+}
+
+.add-action-group {
+  flex: 1;
+  min-width: 110px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.add-action-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.add-console-select {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.new-split-tab-btn:hover {
+  color: var(--accent-secondary);
+  background: rgba(6, 182, 212, 0.08);
+}
+
+/* Add Session dropdown in Broadcast Bar */
+.add-session-dropdown-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.add-session-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  height: 34px; /* match select-all-btn height */
+}
+
+.add-session-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 260px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(20px);
+  z-index: 100;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.15s ease-out;
+}
+
+/* Compact Headers for Split Cells when grid has 3+ panes */
+.split-grid.compact-headers .split-cell-header {
+  padding: 4px 10px;
+}
+
+.split-grid.compact-headers .split-cell-title {
+  font-size: 0.75rem;
+}
+
+.split-grid.compact-headers .split-cell-broadcast-checkbox {
+  font-size: 0.7rem;
+  gap: 4px;
+}
+
+.split-grid.compact-headers .split-cell-btn {
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  gap: 2px;
+}
+
+.split-grid.compact-headers .split-cell-btn.close-btn {
+  padding: 2px 4px;
+}
+
+/* Send Key dropdown styles in Broadcast Bar */
+.signal-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  height: 34px;
+}
+
+.signal-menu-dropdown {
+  min-width: 180px;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.signal-menu-dropdown .context-menu-item {
+  padding: 8px 14px;
+  font-size: 0.75rem;
+  border-radius: 0;
+  cursor: pointer;
 }
