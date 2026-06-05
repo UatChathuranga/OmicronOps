@@ -12,6 +12,7 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
   const [status, setStatus] = useState('connecting'); // 'connecting', 'connected', 'disconnected'
   const [errorMsg, setErrorMsg] = useState(null);
   const [viewMode, setViewMode] = useState('terminal'); // 'terminal' or 'files'
+  const [fontSize, setFontSize] = useState(14);
   
   // VM specifications and usage stats
   const [stats, setStats] = useState(null);
@@ -29,6 +30,25 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
     viewModeRef.current = viewMode;
   }, [viewMode]);
 
+  // Handle dynamically resizing terminal font-size (text zoom)
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.fontSize = fontSize;
+      try {
+        if (fitAddonRef.current) {
+          fitAddonRef.current.fit();
+          const cols = terminalRef.current.cols;
+          const rows = terminalRef.current.rows;
+          if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            socketRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
+          }
+        }
+      } catch (err) {
+        // Ignore temporary layout sizing issues
+      }
+    }
+  }, [fontSize]);
+
   const connectSSH = () => {
     setStatus('connecting');
     setErrorMsg(null);
@@ -38,7 +58,7 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
       const term = new Terminal({
         cursorBlink: true,
         fontFamily: 'var(--font-mono)',
-        fontSize: 14,
+        fontSize: fontSize,
         lineHeight: 1.2,
         theme: {
           background: '#0a0d16',
@@ -80,6 +100,24 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
         const isR = e.key.toLowerCase() === 'r';
         const isF5 = e.key === 'F5';
         const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+
+        // Allow Ctrl++ and Ctrl+- for terminal zoom
+        if (isCtrlOrMeta) {
+          if (e.key === '+' || e.key === '=') {
+            if (e.type === 'keydown') {
+              setFontSize(prev => Math.min(32, prev + 1));
+            }
+            e.preventDefault();
+            return false;
+          }
+          if (e.key === '-') {
+            if (e.type === 'keydown') {
+              setFontSize(prev => Math.max(9, prev - 1));
+            }
+            e.preventDefault();
+            return false;
+          }
+        }
 
         // Allow Ctrl+F / Cmd+F to bubble up for searching
         if (isCtrlOrMeta && isF) {
@@ -253,6 +291,22 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
       el.addEventListener('contextmenu', handleContextMenu);
     }
 
+    const handleGlobalKeyDown = (e) => {
+      if (e.defaultPrevented) return;
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (isCtrlOrMeta) {
+        if (e.key === '+' || e.key === '=') {
+          e.preventDefault();
+          setFontSize(prev => Math.min(32, prev + 1));
+        } else if (e.key === '-') {
+          e.preventDefault();
+          setFontSize(prev => Math.max(9, prev - 1));
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+
     // Set up ResizeObserver to handle element size changes reactively
     const resizeObserver = new ResizeObserver(() => {
       if (terminalRef.current && fitAddonRef.current && statusRef.current === 'connected' && viewModeRef.current === 'terminal') {
@@ -270,6 +324,7 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
 
     // Cleanup on unmount
     return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
       resizeObserver.disconnect();
       if (el) {
         el.removeEventListener('contextmenu', handleContextMenu);
@@ -413,16 +468,38 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
           </div>
           <div className="mode-selector-right">
             {viewMode === 'terminal' && (
-              <button 
-                className="mode-btn action-btn-save"
-                onClick={handleSaveOutput}
-                title="Save terminal console buffer output to a file"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20" />
-                </svg>
-                Save Output
-              </button>
+              <>
+                <button 
+                  className="mode-btn action-btn-zoom-in"
+                  onClick={() => setFontSize(prev => Math.min(32, prev + 1))}
+                  title="Zoom In (Increase text size)"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                  </svg>
+                  {!isSplit && <span>Zoom In</span>}
+                </button>
+                <button 
+                  className="mode-btn action-btn-zoom-out"
+                  onClick={() => setFontSize(prev => Math.max(9, prev - 1))}
+                  title="Zoom Out (Decrease text size)"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM7 10h6" />
+                  </svg>
+                  {!isSplit && <span>Zoom Out</span>}
+                </button>
+                <button 
+                  className="mode-btn action-btn-save"
+                  onClick={handleSaveOutput}
+                  title="Save terminal console buffer output to a file"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20" />
+                  </svg>
+                  <span>Save Output</span>
+                </button>
+              </>
             )}
           </div>
         </div>

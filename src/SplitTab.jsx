@@ -149,16 +149,154 @@ export default function SplitTab({
 
   const subTabsCount = tab.subTabs.length;
   const { cols, rows } = getGridDimensions(subTabsCount);
+
+  // Group sub-tabs and Add Card into column arrays
+  const gridItems = [...tab.subTabs];
+  if (subTabsCount < 4) {
+    gridItems.push({ id: 'add-console', isAddCard: true });
+  }
+
+  const gridCols = [];
+  for (let c = 0; c < cols; c++) {
+    const colItems = [];
+    for (let r = 0; r < rows; r++) {
+      const itemIndex = r * cols + c;
+      if (itemIndex < gridItems.length) {
+        colItems.push(gridItems[itemIndex]);
+      }
+    }
+    if (colItems.length > 0) {
+      gridCols.push(colItems);
+    }
+  }
+
+  const [colWidths, setColWidths] = useState(() => Array(gridCols.length).fill(100 / gridCols.length));
+  const [rowHeights, setRowHeights] = useState(() => gridCols.map(col => Array(col.length).fill(100 / col.length)));
+  const [resizeLock, setResizeLock] = useState(null); // 'horizontal' | 'vertical' | null
+  const [zoomedSubTabId, setZoomedSubTabId] = useState(null);
+  const gridContainerRef = useRef(null);
+
+  const colStructureKey = gridCols.map(c => c.length).join('-');
+
+  // Keep colWidths and rowHeights in sync when grid structure changes
+  useEffect(() => {
+    setColWidths(Array(gridCols.length).fill(100 / gridCols.length));
+    setRowHeights(gridCols.map(col => Array(col.length).fill(100 / col.length)));
+    setResizeLock(null);
+    setZoomedSubTabId(null);
+  }, [colStructureKey, gridCols.length]);
+
+  // Clear zoom if the zoomed tab is removed
+  useEffect(() => {
+    if (zoomedSubTabId && !tab.subTabs.some(st => st.id === zoomedSubTabId)) {
+      setZoomedSubTabId(null);
+    }
+  }, [tab.subTabs, zoomedSubTabId]);
+
+  const handleResetLayout = () => {
+    setColWidths(Array(gridCols.length).fill(100 / gridCols.length));
+    setRowHeights(gridCols.map(col => Array(col.length).fill(100 / col.length)));
+    setResizeLock(null);
+  };
+
+  const handleColMouseDown = (cIdx, e) => {
+    if (resizeLock === 'vertical') return;
+    e.preventDefault();
+    setResizeLock('horizontal');
+    const startX = e.clientX;
+    const startWidths = [...colWidths];
+    const containerWidth = gridContainerRef.current ? gridContainerRef.current.clientWidth : 0;
+    const totalGutterWidth = (gridCols.length - 1) * 10;
+    const usableWidth = Math.max(1, containerWidth - totalGutterWidth);
+
+    const handleMouseMove = (moveEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaPct = (deltaX / usableWidth) * 100;
+      
+      setColWidths(prev => {
+        const next = [...prev];
+        const minPct = 10;
+        let newLeft = startWidths[cIdx] + deltaPct;
+        let newRight = startWidths[cIdx + 1] - deltaPct;
+
+        if (newLeft < minPct) {
+          const diff = minPct - newLeft;
+          newLeft = minPct;
+          newRight -= diff;
+        } else if (newRight < minPct) {
+          const diff = minPct - newRight;
+          newRight = minPct;
+          newLeft += diff;
+        }
+
+        next[cIdx] = newLeft;
+        next[cIdx + 1] = newRight;
+        return next;
+      });
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.classList.remove('resizing-col');
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.classList.add('resizing-col');
+  };
+
+  const handleRowMouseDown = (cIdx, rIdx, e) => {
+    if (resizeLock === 'horizontal') return;
+    e.preventDefault();
+    setResizeLock('vertical');
+    const startY = e.clientY;
+    const colHeights = [...rowHeights[cIdx]];
+    const containerHeight = gridContainerRef.current ? gridContainerRef.current.clientHeight : 0;
+    const totalGutterHeight = (colHeights.length - 1) * 10;
+    const usableHeight = Math.max(1, containerHeight - totalGutterHeight);
+
+    const handleMouseMove = (moveEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      const deltaPct = (deltaY / usableHeight) * 100;
+      
+      setRowHeights(prev => {
+        const next = prev.map(col => [...col]); // deep copy
+        const minPct = 10;
+        let newTop = colHeights[rIdx] + deltaPct;
+        let newBottom = colHeights[rIdx + 1] - deltaPct;
+
+        if (newTop < minPct) {
+          const diff = minPct - newTop;
+          newTop = minPct;
+          newBottom -= diff;
+        } else if (newBottom < minPct) {
+          const diff = minPct - newBottom;
+          newBottom = minPct;
+          newTop += diff;
+        }
+
+        next[cIdx][rIdx] = newTop;
+        next[cIdx][rIdx + 1] = newBottom;
+        return next;
+      });
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.classList.remove('resizing-row');
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.classList.add('resizing-row');
+  };
   
   let gridClass = 'split-grid';
   if (subTabsCount > 2) {
     gridClass += ' compact-headers';
   }
-
-  const gridStyle = {
-    gridTemplateColumns: `repeat(${cols}, 1fr)`,
-    gridTemplateRows: `repeat(${rows}, 1fr)`
-  };
 
   return (
     <div className="split-tab-container">
@@ -171,6 +309,19 @@ export default function SplitTab({
           disabled={tab.subTabs.length === 0}
         >
           {broadcastTargets.size === tab.subTabs.length ? 'Deselect All' : 'Select All'}
+        </button>
+
+        <button
+          type="button"
+          className="btn-secondary reset-layout-btn"
+          onClick={handleResetLayout}
+          title="Reset panel sizing and unlock directions"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+        >
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3 3L21 5" />
+          </svg>
+          <span>Reset Layout</span>
         </button>
 
         {/* Add Session dropdown inside menu bar */}
@@ -320,119 +471,212 @@ export default function SplitTab({
         </form>
       </div>
 
-      {/* Grid of Terminals */}
-      <div className={gridClass} style={gridStyle}>
-        {tab.subTabs.map(subTab => (
-          <div key={subTab.id} className="split-grid-cell glass-panel">
-            <div className="split-cell-header">
-              <div className="split-cell-header-left">
-                <label className="split-cell-broadcast-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={broadcastTargets.has(subTab.id)}
-                    onChange={() => handleToggleBroadcastTarget(subTab.id)}
-                  />
-                  <span className="checkbox-label">Broadcast</span>
-                </label>
-                <span className="split-cell-title" title={subTab.title}>{subTab.title}</span>
-              </div>
-              <div className="split-cell-actions">
-                <button
-                  className="split-cell-btn"
-                  onClick={() => onDetachTab(subTab.id)}
-                  title="Detach back to top tab bar"
-                >
-                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="12" height="12">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-                  </svg>
-                  <span>Detach</span>
-                </button>
-                <button
-                  className="split-cell-btn close-btn"
-                  onClick={() => onCloseSubTab(subTab.id)}
-                  title="Close session"
-                >
-                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="12" height="12">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div className="split-cell-terminal">
-              <TerminalTab
-                tab={subTab}
-                onStatusChange={() => {}}
-                onRegisterSocket={handleRegisterSocket}
-                isSplit={true}
-              />
-            </div>
-          </div>
-        ))}
+      {/* Nested Flexbox Container of Terminals (Columns of Rows) */}
+      <div 
+        className={gridClass} 
+        ref={gridContainerRef}
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          height: 'calc(100% - 56px)',
+          width: '100%',
+          padding: '10px',
+          boxSizing: 'border-box',
+          gap: 0,
+          overflow: 'hidden',
+          position: 'relative'
+        }}
+      >
+        {gridCols.map((colItems, cIdx) => {
+          const isLastCol = cIdx === gridCols.length - 1;
+          const colWidth = colWidths[cIdx] || (100 / gridCols.length);
+          const colVisible = !zoomedSubTabId || colItems.some(item => item.id === zoomedSubTabId);
+          
+          return (
+            <React.Fragment key={`col-fragment-${cIdx}`}>
+              <div
+                className="split-flex-col"
+                style={{
+                  display: colVisible ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  width: zoomedSubTabId ? '100%' : `${colWidth}%`,
+                  height: '100%',
+                  gap: 0,
+                  overflow: 'hidden'
+                }}
+              >
+                {colItems.map((item, rIdx) => {
+                  const isLastRow = rIdx === colItems.length - 1;
+                  const cellHeight = (rowHeights[cIdx] && rowHeights[cIdx][rIdx]) || (100 / colItems.length);
+                  const cellVisible = !zoomedSubTabId || item.id === zoomedSubTabId;
+                  
+                  return (
+                    <React.Fragment key={item.id || 'add-console'}>
+                      <div
+                        className="split-flex-cell"
+                        style={{
+                          width: '100%',
+                          height: zoomedSubTabId ? '100%' : `${cellHeight}%`,
+                          display: cellVisible ? 'flex' : 'none',
+                          flexDirection: 'column',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {item.isAddCard ? (
+                          <div className="split-grid-cell add-console-cell glass-panel" style={{ height: '100%' }}>
+                            <div className="add-console-container">
+                              <div className="add-console-header-row">
+                                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="18" height="18" className="add-console-icon-small">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <h3 className="add-console-title">Add Session ({subTabsCount}/24)</h3>
+                              </div>
+                              
+                              <div className="add-console-actions">
+                                <div className="add-action-group">
+                                  <label className="add-action-label">Pull Open Tab</label>
+                                  <select
+                                    className="form-select add-console-select"
+                                    defaultValue=""
+                                    onChange={(e) => {
+                                      if (e.target.value) {
+                                        onAddSubTab(e.target.value);
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                  >
+                                    <option value="" disabled>Choose session...</option>
+                                    {otherTerminalTabs.length === 0 ? (
+                                      <option disabled>No standalone tabs open</option>
+                                    ) : (
+                                      otherTerminalTabs.map(ot => (
+                                        <option key={ot.id} value={ot.id}>{ot.title}</option>
+                                      ))
+                                    )}
+                                  </select>
+                                </div>
 
-        {/* Add Console grid card if subTabs count is less than 4 */}
-        {subTabsCount < 4 && (
-          <div className="split-grid-cell add-console-cell glass-panel">
-            <div className="add-console-container">
-              <div className="add-console-header-row">
-                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="18" height="18" className="add-console-icon-small">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <h3 className="add-console-title">Add Session ({subTabsCount}/24)</h3>
-              </div>
-              
-              <div className="add-console-actions">
-                <div className="add-action-group">
-                  <label className="add-action-label">Pull Open Tab</label>
-                  <select
-                    className="form-select add-console-select"
-                    defaultValue=""
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        onAddSubTab(e.target.value);
-                        e.target.value = '';
-                      }
-                    }}
-                  >
-                    <option value="" disabled>Choose session...</option>
-                    {otherTerminalTabs.length === 0 ? (
-                      <option disabled>No standalone tabs open</option>
-                    ) : (
-                      otherTerminalTabs.map(ot => (
-                        <option key={ot.id} value={ot.id}>{ot.title}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
+                                <div className="add-action-group">
+                                  <label className="add-action-label">Saved Connection</label>
+                                  <select
+                                    className="form-select add-console-select"
+                                    defaultValue=""
+                                    onChange={(e) => {
+                                      if (e.target.value) {
+                                        const conn = connections.find(c => c.id === e.target.value);
+                                        if (conn) {
+                                          onAddConnectionToSplit(conn);
+                                        }
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                  >
+                                    <option value="" disabled>Choose host...</option>
+                                    {connections.length === 0 ? (
+                                      <option disabled>No connections</option>
+                                    ) : (
+                                      connections.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name} ({c.host})</option>
+                                      ))
+                                    )}
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="split-grid-cell glass-panel" style={{ height: '100%' }}>
+                            <div className="split-cell-header">
+                              <div className="split-cell-header-left">
+                                <label className="split-cell-broadcast-checkbox">
+                                  <input
+                                    type="checkbox"
+                                    checked={broadcastTargets.has(item.id)}
+                                    onChange={() => handleToggleBroadcastTarget(item.id)}
+                                  />
+                                  <span className="checkbox-label">Broadcast</span>
+                                </label>
+                                <span className="split-cell-title" title={item.title}>{item.title}</span>
+                              </div>
+                              <div className="split-cell-actions">
+                                {zoomedSubTabId === item.id ? (
+                                  <button
+                                    className="split-cell-btn maximize-btn active"
+                                    onClick={() => setZoomedSubTabId(null)}
+                                    title="Minimize session to grid"
+                                  >
+                                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="12" height="12">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 14h6m0 0v6m0-6L3 21m17-7h-6m0 0v6m0-6l7 7M14 10h6m0 0V4m0 6l7-7M10 10H4m0 0V4m0 6L3 3" />
+                                    </svg>
+                                    <span>Minimize</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="split-cell-btn maximize-btn"
+                                    onClick={() => setZoomedSubTabId(item.id)}
+                                    title="Maximize session to full size"
+                                  >
+                                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="12" height="12">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+                                    </svg>
+                                    <span>Maximize</span>
+                                  </button>
+                                )}
+                                <button
+                                  className="split-cell-btn"
+                                  onClick={() => onDetachTab(item.id)}
+                                  title="Detach back to top tab bar"
+                                >
+                                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="12" height="12">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+                                  </svg>
+                                  <span>Detach</span>
+                                </button>
+                                <button
+                                  className="split-cell-btn close-btn"
+                                  onClick={() => onCloseSubTab(item.id)}
+                                  title="Close session"
+                                >
+                                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="12" height="12">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                            <div className="split-cell-terminal">
+                              <TerminalTab
+                                tab={item}
+                                onStatusChange={() => {}}
+                                onRegisterSocket={handleRegisterSocket}
+                                isSplit={true}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
-                <div className="add-action-group">
-                  <label className="add-action-label">Saved Connection</label>
-                  <select
-                    className="form-select add-console-select"
-                    defaultValue=""
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        const conn = connections.find(c => c.id === e.target.value);
-                        if (conn) {
-                          onAddConnectionToSplit(conn);
-                        }
-                        e.target.value = '';
-                      }
-                    }}
-                  >
-                    <option value="" disabled>Choose host...</option>
-                    {connections.length === 0 ? (
-                      <option disabled>No connections</option>
-                    ) : (
-                      connections.map(c => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.host})</option>
-                      ))
-                    )}
-                  </select>
-                </div>
+                      {/* Horizontal resizer (within this column) */}
+                      {!isLastRow && !zoomedSubTabId && (
+                        <div
+                          className={`grid-resizer-h ${resizeLock === 'horizontal' ? 'locked' : ''}`}
+                          onMouseDown={(e) => handleRowMouseDown(cIdx, rIdx, e)}
+                        />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
-            </div>
-          </div>
-        )}
+
+              {/* Vertical resizer */}
+              {!isLastCol && !zoomedSubTabId && (
+                <div
+                  className={`grid-resizer-v ${resizeLock === 'vertical' ? 'locked' : ''}`}
+                  onMouseDown={(e) => handleColMouseDown(cIdx, e)}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
     </div>
   );

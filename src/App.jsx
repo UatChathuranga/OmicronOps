@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import TerminalTab from './TerminalTab';
 import SplitTab from './SplitTab';
 import './App.css';
@@ -47,6 +47,7 @@ export default function App() {
   const [connections, setConnections] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const hasInitializedCollapsedRef = useRef(false);
 
   // Tabs state
   // Start with a default Dashboard tab
@@ -106,6 +107,17 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setConnections(data);
+
+        // On initial app launch, set all connection groups to collapsed
+        if (!hasInitializedCollapsedRef.current) {
+          hasInitializedCollapsedRef.current = true;
+          const initialCollapsed = {};
+          data.forEach(conn => {
+            const groupName = conn.group || 'Default';
+            initialCollapsed[groupName] = true;
+          });
+          setCollapsedGroups(initialCollapsed);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch connections:', err);

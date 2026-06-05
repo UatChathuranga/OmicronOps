@@ -1095,6 +1095,18 @@
   color: var(--text-primary) !important;
 }
 
+.action-btn-zoom-in:hover {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  color: #34d399 !important;
+}
+
+.action-btn-zoom-out:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  color: #f87171 !important;
+}
+
 .mode-btn {
   background: transparent;
   border: 1px solid transparent;
@@ -1909,7 +1921,8 @@
   z-index: 10;
 }
 
-.broadcast-bar .select-all-btn {
+.broadcast-bar .select-all-btn,
+.broadcast-bar .reset-layout-btn {
   padding: 8px 14px;
   font-size: 0.8rem;
   flex-shrink: 0;
@@ -1936,12 +1949,89 @@
 }
 
 .split-grid {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
   padding: 10px;
   flex-grow: 1;
   overflow: hidden;
   height: calc(100% - 56px);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Body cursor overlays during resizing */
+body.resizing-col {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+body.resizing-row {
+  cursor: row-resize !important;
+  user-select: none !important;
+}
+
+.grid-resizer-v.locked,
+.grid-resizer-h.locked {
+  pointer-events: none;
+  opacity: 0;
+  cursor: default;
+}
+
+/* Grid Resizer Styles */
+.grid-resizer-v {
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+  width: 10px;
+  height: 100%;
+}
+
+.grid-resizer-v::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.grid-resizer-v:hover::after,
+.grid-resizer-v.dragging::after {
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary-glow);
+  left: 3px;
+  width: 4px;
+}
+
+.grid-resizer-h {
+  cursor: row-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+  height: 10px;
+  width: 100%;
+}
+
+.grid-resizer-h::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.grid-resizer-h:hover::after,
+.grid-resizer-h.dragging::after {
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary-glow);
+  top: 3px;
+  height: 4px;
 }
 
 .grid-1x1 {
@@ -2066,6 +2156,18 @@
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;
   border-color: rgba(239, 68, 68, 0.3);
+}
+
+.split-cell-btn.maximize-btn.active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.split-cell-btn.maximize-btn.active:hover {
+  background: rgba(16, 185, 129, 0.25);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
 }
 
 .split-cell-terminal {
