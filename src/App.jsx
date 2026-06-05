@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import TerminalTab from './TerminalTab';
 import SplitTab from './SplitTab';
 import './App.css';
+import { destroySession } from './sessionRegistry';
 import pkg from '../package.json';
 import logo from '../build/icon.png';
 
@@ -467,6 +468,9 @@ export default function App() {
   };
 
   const handleCloseSubTab = (subTabId, splitTabId) => {
+    // Explicitly destroy the SSH connection and terminal instances
+    destroySession(subTabId);
+
     setTabs(prev => prev.map(t => {
       if (t.id === splitTabId) {
         return {
@@ -526,6 +530,17 @@ export default function App() {
 
   const handleCloseTab = (tabId, e) => {
     if (e) e.stopPropagation();
+
+    // Explicitly destroy the SSH connection and terminal instances associated with the tab
+    const tabToClose = tabs.find(t => t.id === tabId);
+    if (tabToClose) {
+      if (tabToClose.type === 'terminal') {
+        destroySession(tabId);
+      } else if (tabToClose.type === 'split' && tabToClose.subTabs) {
+        tabToClose.subTabs.forEach(st => destroySession(st.id));
+      }
+    }
+
     const updatedTabs = tabs.filter(t => t.id !== tabId);
     
     if (updatedTabs.length === 0) {

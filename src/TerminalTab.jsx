@@ -3,25 +3,55 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import SftpExplorer from './SftpExplorer';
 import 'xterm/css/xterm.css';
+import { getSession, registerSession } from './sessionRegistry';
 
 export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isSplit }) {
   const containerRef = useRef(null);
   const terminalRef = useRef(null);
   const fitAddonRef = useRef(null);
   const socketRef = useRef(null);
-  const [status, setStatus] = useState('connecting'); // 'connecting', 'connected', 'disconnected'
+
+  const existingSession = getSession(tab.id);
+  const [status, setStatus] = useState(existingSession ? existingSession.status : 'connecting');
   const [errorMsg, setErrorMsg] = useState(null);
   const [viewMode, setViewMode] = useState('terminal'); // 'terminal' or 'files'
   const [fontSize, setFontSize] = useState(14);
   
   // VM specifications and usage stats
-  const [stats, setStats] = useState(null);
-  const [speeds, setSpeeds] = useState({ rxSpeed: 0, txSpeed: 0 });
+  const [stats, setStats] = useState(existingSession ? existingSession.stats : null);
+  const [speeds, setSpeeds] = useState(existingSession ? existingSession.speeds : { rxSpeed: 0, txSpeed: 0 });
   const lastStatsTimeRef = useRef(null);
 
   const statusRef = useRef('connecting');
   const viewModeRef = useRef('terminal');
 
+  const onStatusChangeRef = useRef(onStatusChange);
+  const setStatusRef = useRef(setStatus);
+  const setErrorMsgRef = useRef(setErrorMsg);
+  const setStatsRef = useRef(setStats);
+  const setSpeedsRef = useRef(setSpeeds);
+
+  const updateStatus = (newVal) => {
+    setStatus(newVal);
+    const session = getSession(tab.id);
+    if (session) session.status = newVal;
+  };
+  const updateStats = (newVal) => {
+    setStats(newVal);
+    const session = getSession(tab.id);
+    if (session) session.stats = newVal;
+  };
+  const updateSpeeds = (newVal) => {
+    setSpeeds(newVal);
+    const session = getSession(tab.id);
+    if (session) session.speeds = newVal;
+  };
+
+  const updateStatusRef = useRef(updateStatus);
+  const updateStatsRef = useRef(updateStats);
+  const updateSpeedsRef = useRef(updateSpeeds);
+
+  // Synchronize dynamic refs on every render
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
@@ -29,6 +59,17 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange;
+    setStatusRef.current = setStatus;
+    setErrorMsgRef.current = setErrorMsg;
+    setStatsRef.current = setStats;
+    setSpeedsRef.current = setSpeeds;
+    updateStatusRef.current = updateStatus;
+    updateStatsRef.current = updateStats;
+    updateSpeedsRef.current = updateSpeeds;
+  });
 
   // Handle dynamically resizing terminal font-size (text zoom)
   useEffect(() => {
@@ -50,6 +91,18 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
   }, [fontSize]);
 
   const connectSSH = () => {
+    // Check if session already exists in global registry
+    const existing = getSession(tab.id);
+    if (existing) {
+      terminalRef.current = existing.term;
+      fitAddonRef.current = existing.fitAddon;
+      socketRef.current = existing.socket;
+      setStatus(existing.status);
+      setStats(existing.stats);
+      setSpeeds(existing.speeds);
+      return;
+    }
+
     setStatus('connecting');
     setErrorMsg(null);
 
@@ -155,13 +208,15 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
     const socket = new WebSocket(wsUrl);
     socketRef.current = socket;
 
-    if (onRegisterSocket) {
-      onRegisterSocket(tab.id, (data) => {
-        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-          socketRef.current.send(JSON.stringify({ type: 'data', data }));
-        }
-      });
-    }
+    // Register active session to allow survival across mounts
+    registerSession(tab.id, {
+      term,
+      fitAddon,
+      socket,
+      status: 'connecting',
+      stats: null,
+      speeds: { rxSpeed: 0, txSpeed: 0 }
+    });
 
     socket.onopen = () => {
       // Fit first to determine sizes
@@ -199,17 +254,19 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
         const msg = JSON.parse(event.data);
 
         if (msg.type === 'status') {
-          setStatus(msg.status);
-          onStatusChange(tab.id, msg.status);
+          updateStatusRef.current(msg.status);
+          if (onStatusChangeRef.current) {
+            onStatusChangeRef.current(tab.id, msg.status);
+          }
           if (msg.error) {
-            setErrorMsg(msg.error);
+            setErrorMsgRef.current(msg.error);
             term.write(`\r\n\x1b[31mSSH Error: ${msg.error}\x1b[0m\r\n`);
           }
         } else if (msg.type === 'data') {
           term.write(colorizeText(msg.data));
         } else if (msg.type === 'stats') {
           const now = Date.now();
-          setStats(current => {
+          updateStatsRef.current(current => {
             if (current && lastStatsTimeRef.current) {
               const timeDiff = (now - lastStatsTimeRef.current) / 1000;
               if (timeDiff > 0) {
@@ -217,7 +274,7 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
                 const txDiff = msg.stats.network.tx - current.network.tx;
                 const rxSpeed = rxDiff >= 0 ? rxDiff / timeDiff : 0;
                 const txSpeed = txDiff >= 0 ? txDiff / timeDiff : 0;
-                setSpeeds({ rxSpeed, txSpeed });
+                updateSpeedsRef.current({ rxSpeed, txSpeed });
               }
             }
             lastStatsTimeRef.current = now;
@@ -231,14 +288,18 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
 
     socket.onerror = (err) => {
       console.error('WebSocket encountered an error:', err);
-      setStatus('disconnected');
-      onStatusChange(tab.id, 'disconnected');
-      setErrorMsg('WebSocket connection error.');
+      updateStatusRef.current('disconnected');
+      if (onStatusChangeRef.current) {
+        onStatusChangeRef.current(tab.id, 'disconnected');
+      }
+      setErrorMsgRef.current('WebSocket connection error.');
     };
 
     socket.onclose = () => {
-      setStatus('disconnected');
-      onStatusChange(tab.id, 'disconnected');
+      updateStatusRef.current('disconnected');
+      if (onStatusChangeRef.current) {
+        onStatusChangeRef.current(tab.id, 'disconnected');
+      }
     };
 
     // Attach local term keystroke listener to WebSocket
@@ -270,7 +331,14 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
       fitAddonRef.current.fit();
     }
 
-    // Intercept right click (contextmenu) to paste from system clipboard
+    if (onRegisterSocket) {
+      onRegisterSocket(tab.id, (data) => {
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          socketRef.current.send(JSON.stringify({ type: 'data', data }));
+        }
+      });
+    }
+
     // Intercept right click (contextmenu) to paste from system clipboard
     const handleContextMenu = (e) => {
       if (viewModeRef.current !== 'terminal') return; // Do not intercept context menu in SFTP view
@@ -322,19 +390,12 @@ export default function TerminalTab({ tab, onStatusChange, onRegisterSocket, isS
       resizeObserver.observe(containerRef.current);
     }
 
-    // Cleanup on unmount
+    // Cleanup on unmount - do NOT close socket/terminal since they are registered globally
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
       resizeObserver.disconnect();
       if (el) {
         el.removeEventListener('contextmenu', handleContextMenu);
-      }
-      if (socketRef.current) {
-        socketRef.current.close();
-      }
-      if (terminalRef.current) {
-        terminalRef.current.dispose();
-        terminalRef.current = null;
       }
       if (onRegisterSocket) {
         onRegisterSocket(tab.id, null);

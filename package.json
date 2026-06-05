@@ -1,7 +1,7 @@
 {
   "name": "omicron-ssh",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "OmicronSSH - A modern lightweight desktop SSH client for Linux",
   "homepage": "https://github.com/chathuranga/OmicronSSH",
   "author": {
