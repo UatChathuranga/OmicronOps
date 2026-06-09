@@ -42,7 +42,7 @@ function parseCSV(text) {
 }
 
 export default function App() {
-  const productName = pkg.build?.productName || "OmicronSSH";
+  const productName = pkg.build?.productName || "OmicronOps";
   const { version } = pkg;
   // Connections state
   const [connections, setConnections] = useState([]);

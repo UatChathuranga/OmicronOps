@@ -1,8 +1,8 @@
-# OmicronSSH
+# OmicronOps
 
-OmicronSSH is a premium, lightweight, glassmorphic desktop SSH & SFTP client built on Electron and React. Designed to bring a modern terminal experience and WinSCP-like visual file explorer to Linux desktops.
+OmicronOps is a premium, lightweight, glassmorphic desktop DevOps & remote management client built on Electron and React. Designed to bring a modern terminal experience and WinSCP-like visual file explorer to Linux desktops.
 
-![OmicronSSH App Icon](build/icon.png)
+![OmicronOps App Icon](build/icon.png)
 
 ---
 
@@ -19,7 +19,7 @@ OmicronSSH is a premium, lightweight, glassmorphic desktop SSH & SFTP client bui
 * **Clipboard Interoperability**:
   * **Highlight-to-Copy**: Highlighted terminal output is automatically copied to your system clipboard.
   * **Right-Click Paste**: Right-click paste support to transfer text from your clipboard directly into active PTY commands.
-* **Encrypted Credential Storage**: Encrypts connection profiles locally using AES-256-CBC with a secure host key. Profiles are stored in compliance with Linux desktop standards under `~/.config/OmicronSSH/`.
+* **Encrypted Credential Storage**: Encrypts connection profiles locally using AES-256-CBC with a secure host key. Profiles are stored in compliance with Linux desktop standards under `~/.config/OmicronOps/`.
 * **Automatic Window Resize**: Synchronizes PTY terminal rows/columns automatically via WebSocket whenever the window size changes.
 
 ---
@@ -68,7 +68,7 @@ npm run app
 
 ## Packaging & Building Installers
 
-To package OmicronSSH for distribution to other Linux systems:
+To package OmicronOps for distribution to other Linux systems:
 
 1. Build client assets and compile installer packages:
    ```bash
@@ -76,8 +76,8 @@ To package OmicronSSH for distribution to other Linux systems:
    npm run dist
    ```
 2. Locate the compiled binaries in the `release/` directory:
-   * **`release/omicron-ssh_1.0.0_amd64.deb`**: Standard Debian/Ubuntu installer.
-   * **`release/OmicronSSH-1.0.0.AppImage`**: Portable, self-contained standalone executable.
+   * **`release/omicron-ops_1.0.0_amd64.deb`**: Standard Debian/Ubuntu installer.
+   * **`release/OmicronOps-1.0.0.AppImage`**: Portable, self-contained standalone executable.
 
 ---
 

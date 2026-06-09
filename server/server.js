@@ -267,7 +267,7 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(distPath, 'index.html'), (err) => {
     if (err) {
       // In dev mode or if frontend is not built yet
-      res.status(200).send('OmicronSSH Backend Running. UI is available in development mode (port 5173) or after running npm run build.');
+      res.status(200).send('OmicronOps Backend Running. UI is available in development mode (port 5173) or after running npm run build.');
     }
   });
 });
@@ -481,7 +481,7 @@ export const serverStarted = new Promise((resolve) => {
       const actualPort = server.address().port;
       global.serverPort = actualPort;
       console.log(`====================================================`);
-      console.log(`OmicronSSH Server is running on port ${actualPort}`);
+      console.log(`OmicronOps Server is running on port ${actualPort}`);
       console.log(`Open http://localhost:${actualPort} in your browser`);
       console.log(`====================================================`);
       resolve(actualPort);

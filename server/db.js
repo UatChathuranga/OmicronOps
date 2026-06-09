@@ -7,11 +7,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Resolve standard Linux user configuration folder path (~/.config/OmicronSSH)
+// Resolve standard Linux user configuration folder path (~/.config/OmicronOps)
 const xdgConfig = process.env.XDG_CONFIG_HOME;
 const DATA_DIR = xdgConfig 
-  ? path.join(xdgConfig, 'OmicronSSH') 
-  : path.join(os.homedir(), '.config', 'OmicronSSH');
+  ? path.join(xdgConfig, 'OmicronOps') 
+  : path.join(os.homedir(), '.config', 'OmicronOps');
 
 const DB_FILE = path.join(DATA_DIR, 'connections.json');
 const KEY_FILE = path.join(DATA_DIR, 'secret.key');
@@ -21,7 +21,27 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Automatically migrate database files from the old local directory if they exist
+// Automatically migrate database files from the old OmicronSSH directory or local directory if they exist
+const SSH_DATA_DIR = xdgConfig 
+  ? path.join(xdgConfig, 'OmicronSSH') 
+  : path.join(os.homedir(), '.config', 'OmicronSSH');
+
+const SSH_DB_FILE = path.join(SSH_DATA_DIR, 'connections.json');
+const SSH_KEY_FILE = path.join(SSH_DATA_DIR, 'secret.key');
+
+if (fs.existsSync(SSH_DATA_DIR)) {
+  try {
+    if (fs.existsSync(SSH_KEY_FILE) && !fs.existsSync(KEY_FILE)) {
+      fs.copyFileSync(SSH_KEY_FILE, KEY_FILE);
+    }
+    if (fs.existsSync(SSH_DB_FILE) && !fs.existsSync(DB_FILE)) {
+      fs.copyFileSync(SSH_DB_FILE, DB_FILE);
+    }
+  } catch (err) {
+    console.error('OmicronOps: automatic migration of OmicronSSH config files failed:', err);
+  }
+}
+
 const OLD_DATA_DIR = path.join(__dirname, '..', 'data');
 const OLD_DB_FILE = path.join(OLD_DATA_DIR, 'connections.json');
 const OLD_KEY_FILE = path.join(OLD_DATA_DIR, 'secret.key');
@@ -35,7 +55,7 @@ if (fs.existsSync(OLD_DATA_DIR)) {
       fs.copyFileSync(OLD_DB_FILE, DB_FILE);
     }
   } catch (err) {
-    console.error('OmicronSSH: automatic migration of local config files failed:', err);
+    console.error('OmicronOps: automatic migration of local config files failed:', err);
   }
 }
 

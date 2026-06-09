@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 let serverPromise = import('./server/server.js')
   .then(module => module.serverStarted)
   .catch(err => {
-    console.error('Failed to start OmicronSSH server:', err);
+    console.error('Failed to start OmicronOps server:', err);
   });
 
 let mainWindow;
@@ -18,7 +18,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
-    title: 'OmicronSSH',
+    title: 'OmicronOps',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true

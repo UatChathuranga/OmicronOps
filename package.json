@@ -1,9 +1,9 @@
 {
-  "name": "omicron-ssh",
+  "name": "omicron-ops",
   "private": true,
   "version": "1.0.3",
-  "description": "OmicronSSH - A modern lightweight desktop SSH client for Linux",
-  "homepage": "https://github.com/chathuranga/OmicronSSH",
+  "description": "OmicronOps - A modern DevOps and remote management client",
+  "homepage": "https://github.com/UatChathuranga/OmicronOps",
   "author": {
     "name": "Chathuranga",
     "email": "uatchathuranga@gmail.com"
@@ -22,8 +22,8 @@
   },
   "build": {
     "npmRebuild": false,
-    "appId": "com.omicronssh.app",
-    "productName": "OmicronSSH",
+    "appId": "com.omicronops.app",
+    "productName": "OmicronOps",
     "directories": {
       "output": "release"
     },
