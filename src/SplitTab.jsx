@@ -8,7 +8,10 @@ export default function SplitTab({
   onDetachTab,
   onCloseSubTab,
   onAddSubTab,
-  onAddConnectionToSplit
+  onAddConnectionToSplit,
+  macros = [],
+  onRefreshMacros,
+  isActive
 }) {
   const [broadcastCommand, setBroadcastCommand] = useState('');
   const [broadcastTargets, setBroadcastTargets] = useState(new Set());
@@ -646,9 +649,13 @@ export default function SplitTab({
                             <div className="split-cell-terminal">
                               <TerminalTab
                                 tab={item}
+                                connections={connections}
                                 onStatusChange={() => {}}
                                 onRegisterSocket={handleRegisterSocket}
                                 isSplit={true}
+                                macros={macros}
+                                onRefreshMacros={onRefreshMacros}
+                                isActive={isActive}
                               />
                             </div>
                           </div>

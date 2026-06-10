@@ -76,10 +76,18 @@ export default function App() {
   const [importError, setImportError] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
   
+  // Macros state
+  const [macros, setMacros] = useState([]);
+  const [isMacrosModalOpen, setIsMacrosModalOpen] = useState(false);
+  const [isMacroFormOpen, setIsMacroFormOpen] = useState(false);
+  const [macroFormMode, setMacroFormMode] = useState('create'); // 'create' or 'edit'
+  const [macroFormData, setMacroFormData] = useState({ id: null, name: '', command: '', delay: 1, delays: null, stepMode: false });
+
   // Group inline renaming state
   const [editingGroupName, setEditingGroupName] = useState(null);
   const [newGroupInputValue, setNewGroupInputValue] = useState('');
   
+  const [modalTab, setModalTab] = useState('general'); // 'general' or 'services'
   const [formData, setFormData] = useState({
     name: '',
     host: '',
@@ -88,7 +96,14 @@ export default function App() {
     authMethod: 'password',
     password: '',
     privateKey: '',
-    group: 'Default'
+    group: 'Default',
+    services: {
+      postgres: { enabled: false, port: '5432', database: '', username: 'postgres', password: '' },
+      mongo: { enabled: false, port: '27017', database: 'admin', username: '', password: '' },
+      redis: { enabled: false, port: '6379', password: '' },
+      rabbitmq: { enabled: false, port: '5672', username: 'guest', password: '' },
+      haproxy: { enabled: false, port: '1936', statsUrl: 'http://localhost:1936/;csv', username: '', password: '' }
+    }
   });
 
   // Quick connect form state
@@ -122,6 +137,18 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to fetch connections:', err);
+    }
+  };
+
+  const fetchMacros = async () => {
+    try {
+      const res = await fetch('/api/macros');
+      if (res.ok) {
+        const data = await res.json();
+        setMacros(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch macros:', err);
     }
   };
 
@@ -190,6 +217,7 @@ export default function App() {
 
   useEffect(() => {
     fetchConnections();
+    fetchMacros();
   }, []);
 
   // Prevent page reload via browser shortcuts globally
@@ -225,6 +253,7 @@ export default function App() {
   const handleOpenCreateModal = () => {
     setModalMode('create');
     setGroupSelectMode('select');
+    setModalTab('general');
     setFormData({
       name: '',
       host: '',
@@ -233,7 +262,14 @@ export default function App() {
       authMethod: 'password',
       password: '',
       privateKey: '',
-      group: 'Default'
+      group: 'Default',
+      services: {
+        postgres: { enabled: false, port: '5432', database: '', username: 'postgres', password: '' },
+        mongo: { enabled: false, port: '27017', database: 'admin', username: '', password: '' },
+        redis: { enabled: false, port: '6379', password: '' },
+        rabbitmq: { enabled: false, port: '5672', username: 'guest', password: '' },
+        haproxy: { enabled: false, port: '1936', statsUrl: 'http://localhost:1936/;csv', username: '', password: '' }
+      }
     });
     setIsModalOpen(true);
   };
@@ -243,6 +279,7 @@ export default function App() {
     setModalMode('edit');
     setEditingId(conn.id);
     setGroupSelectMode('select');
+    setModalTab('general');
     setFormData({
       name: conn.name,
       host: conn.host,
@@ -251,7 +288,41 @@ export default function App() {
       authMethod: conn.authMethod,
       password: conn.password || '',
       privateKey: conn.privateKey || '',
-      group: conn.group || 'Default'
+      group: conn.group || 'Default',
+      services: {
+        postgres: {
+          enabled: !!conn.services?.postgres?.enabled,
+          port: (conn.services?.postgres?.port || '5432').toString(),
+          database: conn.services?.postgres?.database || '',
+          username: conn.services?.postgres?.username || 'postgres',
+          password: conn.services?.postgres?.password || ''
+        },
+        mongo: {
+          enabled: !!conn.services?.mongo?.enabled,
+          port: (conn.services?.mongo?.port || '27017').toString(),
+          database: conn.services?.mongo?.database || 'admin',
+          username: conn.services?.mongo?.username || '',
+          password: conn.services?.mongo?.password || ''
+        },
+        redis: {
+          enabled: !!conn.services?.redis?.enabled,
+          port: (conn.services?.redis?.port || '6379').toString(),
+          password: conn.services?.redis?.password || ''
+        },
+        rabbitmq: {
+          enabled: !!conn.services?.rabbitmq?.enabled,
+          port: (conn.services?.rabbitmq?.port || '5672').toString(),
+          username: conn.services?.rabbitmq?.username || 'guest',
+          password: conn.services?.rabbitmq?.password || ''
+        },
+        haproxy: {
+          enabled: !!conn.services?.haproxy?.enabled,
+          port: (conn.services?.haproxy?.port || '1936').toString(),
+          statsUrl: conn.services?.haproxy?.statsUrl || 'http://localhost:1936/;csv',
+          username: conn.services?.haproxy?.username || '',
+          password: conn.services?.haproxy?.password || ''
+        }
+      }
     });
     setIsModalOpen(true);
   };
@@ -290,6 +361,75 @@ export default function App() {
         fetchConnections();
       } else {
         alert('Failed to delete connection.');
+      }
+    } catch (err) {
+      alert(`Request failed: ${err.message}`);
+    }
+  };
+
+  const handleSaveMacro = async (e) => {
+    e.preventDefault();
+    if (!macroFormData.name || !macroFormData.command) {
+      alert("Macro Name and Command are required.");
+      return;
+    }
+    const delayVal = parseFloat(macroFormData.delay);
+    if (isNaN(delayVal) || delayVal < 0) {
+      alert("Delay must be a non-negative number.");
+      return;
+    }
+    try {
+      const url = macroFormMode === 'create' ? '/api/macros' : `/api/macros/${macroFormData.id}`;
+      const method = macroFormMode === 'create' ? 'POST' : 'PUT';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: macroFormData.name,
+          command: macroFormData.command,
+          delay: delayVal,
+          delays: macroFormData.delays,
+          stepMode: macroFormData.stepMode
+        })
+      });
+      if (res.ok) {
+        setIsMacroFormOpen(false);
+        setMacroFormData({ id: null, name: '', command: '', delay: 1, delays: null, stepMode: false });
+        fetchMacros();
+      } else {
+        const err = await res.json();
+        alert(`Failed to save macro: ${err.error}`);
+      }
+    } catch (err) {
+      alert(`Request failed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteMacro = async (id) => {
+    if (!confirm("Are you sure you want to delete this macro?")) return;
+    try {
+      const res = await fetch(`/api/macros/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchMacros();
+      } else {
+        alert("Failed to delete macro.");
+      }
+    } catch (err) {
+      alert(`Request failed: ${err.message}`);
+    }
+  };
+
+  const handleToggleSleepTiming = async (id, useSleepTiming) => {
+    try {
+      const res = await fetch(`/api/macros/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useSleepTiming })
+      });
+      if (res.ok) {
+        fetchMacros();
+      } else {
+        alert("Failed to update macro timing setting.");
       }
     } catch (err) {
       alert(`Request failed: ${err.message}`);
@@ -764,6 +904,11 @@ export default function App() {
             <span>{productName}</span>
           </div>
           <div className="header-actions">
+            <button className="bulk-import-btn" onClick={() => setIsMacrosModalOpen(true)} title="Manage Terminal Macros">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="16" height="16">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </button>
             <button className="bulk-import-btn" onClick={handleOpenImportModal} title="Bulk Import CSV">
               <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -1146,11 +1291,18 @@ export default function App() {
                   onCloseSubTab={(subTabId) => handleCloseSubTab(subTabId, tab.id)}
                   onAddSubTab={(subTabId) => handleAddSubTabToSplit(subTabId, tab.id)}
                   onAddConnectionToSplit={(conn) => handleAddConnectionToSplit(conn, tab.id)}
+                  macros={macros}
+                  onRefreshMacros={fetchMacros}
+                  isActive={activeTabId === tab.id}
                 />
               ) : (
                 <TerminalTab
                   tab={tab}
+                  connections={connections}
                   onStatusChange={handleTabStatusChange}
+                  macros={macros}
+                  onRefreshMacros={fetchMacros}
+                  isActive={activeTabId === tab.id}
                 />
               )}
             </div>
@@ -1173,133 +1325,543 @@ export default function App() {
           </div>
           
           <form onSubmit={handleFormSubmit}>
-            <div className="modal-body">
-              <div className="form-group" style={{ marginBottom: '14px' }}>
-                <label className="form-label">Connection Name</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="e.g. My Ubuntu Server"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
-              </div>
+            <div className="modal-tabs">
+              <button 
+                type="button" 
+                className={`modal-tab-btn ${modalTab === 'general' ? 'active' : ''}`}
+                onClick={() => setModalTab('general')}
+              >
+                General
+              </button>
+              <button 
+                type="button" 
+                className={`modal-tab-btn ${modalTab === 'services' ? 'active' : ''}`}
+                onClick={() => setModalTab('services')}
+              >
+                Services (DB & Infrastructure)
+              </button>
+            </div>
 
-              <div className="form-row" style={{ marginBottom: '14px' }}>
-                <div className="form-group">
-                  <label className="form-label">Host / IP</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. 192.168.1.100"
-                    required
-                    value={formData.host}
-                    onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-                  />
-                </div>
-                <div className="form-group small">
-                  <label className="form-label">Port</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    required
-                    value={formData.port}
-                    onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="form-row" style={{ marginBottom: '14px' }}>
-                <div className="form-group">
-                  <label className="form-label">Username</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    required
-                    value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Group / Folder</span>
-                    <button 
-                      type="button" 
-                      className="text-link-btn"
-                      onClick={() => {
-                        const nextMode = groupSelectMode === 'select' ? 'new' : 'select';
-                        setGroupSelectMode(nextMode);
-                        if (nextMode === 'select') {
-                          setFormData({ ...formData, group: 'Default' });
-                        } else {
-                          setFormData({ ...formData, group: '' });
-                        }
-                      }}
-                    >
-                      {groupSelectMode === 'select' ? '+ Create New' : 'Select Existing'}
-                    </button>
-                  </label>
-                  {groupSelectMode === 'select' ? (
-                    <select
-                      className="form-select"
-                      value={formData.group || 'Default'}
-                      onChange={(e) => setFormData({ ...formData, group: e.target.value })}
-                    >
-                      <option value="Default">Default</option>
-                      {existingGroups.map(g => (
-                        <option key={g} value={g}>{g}</option>
-                      ))}
-                    </select>
-                  ) : (
+            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              {modalTab === 'general' ? (
+                <>
+                  <div className="form-group" style={{ marginBottom: '14px' }}>
+                    <label className="form-label">Connection Name</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. Production"
+                      placeholder="e.g. My Ubuntu Server"
                       required
-                      value={formData.group}
-                      onChange={(e) => setFormData({ ...formData, group: e.target.value })}
-                      autoFocus
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     />
+                  </div>
+
+                  <div className="form-row" style={{ marginBottom: '14px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Host / IP</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. 192.168.1.100"
+                        required
+                        value={formData.host}
+                        onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group small">
+                      <label className="form-label">Port</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        required
+                        value={formData.port}
+                        onChange={(e) => setFormData({ ...formData, port: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row" style={{ marginBottom: '14px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Username</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        required
+                        value={formData.username}
+                        onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Group / Folder</span>
+                        <button 
+                          type="button" 
+                          className="text-link-btn"
+                          onClick={() => {
+                            const nextMode = groupSelectMode === 'select' ? 'new' : 'select';
+                            setGroupSelectMode(nextMode);
+                            if (nextMode === 'select') {
+                              setFormData({ ...formData, group: 'Default' });
+                            } else {
+                              setFormData({ ...formData, group: '' });
+                            }
+                          }}
+                        >
+                          {groupSelectMode === 'select' ? '+ Create New' : 'Select Existing'}
+                        </button>
+                      </label>
+                      {groupSelectMode === 'select' ? (
+                        <select
+                          className="form-select"
+                          value={formData.group || 'Default'}
+                          onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+                        >
+                          <option value="Default">Default</option>
+                          {existingGroups.map(g => (
+                            <option key={g} value={g}>{g}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="e.g. Production"
+                          required
+                          value={formData.group}
+                          onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+                          autoFocus
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '14px' }}>
+                    <label className="form-label">Authentication Method</label>
+                    <select
+                      className="form-select"
+                      value={formData.authMethod}
+                      onChange={(e) => setFormData({ ...formData, authMethod: e.target.value })}
+                    >
+                      <option value="password">Password</option>
+                      <option value="key">Private Key</option>
+                    </select>
+                  </div>
+
+                  {formData.authMethod === 'password' ? (
+                    <div className="form-group">
+                      <label className="form-label">Password</label>
+                      <input
+                        type="password"
+                        className="form-input"
+                        placeholder={modalMode === 'edit' ? 'Keep existing password (********)' : 'Enter password'}
+                        required={modalMode === 'create'}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      />
+                    </div>
+                  ) : (
+                    <div className="form-group">
+                      <label className="form-label">Private Key Content</label>
+                      <textarea
+                        className="form-textarea"
+                        rows={4}
+                        placeholder={modalMode === 'edit' ? 'Keep existing key (********)' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
+                        required={modalMode === 'create'}
+                        value={formData.privateKey}
+                        onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
+                      />
+                    </div>
                   )}
-                </div>
-              </div>
-
-              <div className="form-group" style={{ marginBottom: '14px' }}>
-                <label className="form-label">Authentication Method</label>
-                <select
-                  className="form-select"
-                  value={formData.authMethod}
-                  onChange={(e) => setFormData({ ...formData, authMethod: e.target.value })}
-                >
-                  <option value="password">Password</option>
-                  <option value="key">Private Key</option>
-                </select>
-              </div>
-
-              {formData.authMethod === 'password' ? (
-                <div className="form-group">
-                  <label className="form-label">Password</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    placeholder={modalMode === 'edit' ? 'Keep existing password (********)' : 'Enter password'}
-                    required={modalMode === 'create'}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  />
-                </div>
+                </>
               ) : (
-                <div className="form-group">
-                  <label className="form-label">Private Key Content</label>
-                  <textarea
-                    className="form-textarea"
-                    rows={4}
-                    placeholder={modalMode === 'edit' ? 'Keep existing key (********)' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
-                    required={modalMode === 'create'}
-                    value={formData.privateKey}
-                    onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
-                  />
+                <div className="services-config-list">
+                  {/* PostgreSQL Service */}
+                  <div className="service-config-item glass-panel">
+                    <label className="service-toggle">
+                      <input 
+                        type="checkbox"
+                        checked={formData.services?.postgres?.enabled || false}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          services: {
+                            ...formData.services,
+                            postgres: { ...formData.services.postgres, enabled: e.target.checked }
+                          }
+                        })}
+                      />
+                      <span className="service-toggle-label">PostgreSQL Database Client</span>
+                    </label>
+                    
+                    {formData.services?.postgres?.enabled && (
+                      <div className="service-fields">
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Port</label>
+                            <input 
+                              type="number" 
+                              className="form-input"
+                              placeholder="5432"
+                              value={formData.services.postgres.port}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  postgres: { ...formData.services.postgres, port: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Database Name</label>
+                            <input 
+                              type="text" 
+                              className="form-input"
+                              placeholder="postgres"
+                              value={formData.services.postgres.database}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  postgres: { ...formData.services.postgres, database: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                        </div>
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Username</label>
+                            <input 
+                              type="text" 
+                              className="form-input"
+                              placeholder="postgres"
+                              value={formData.services.postgres.username}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  postgres: { ...formData.services.postgres, username: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Password</label>
+                            <input 
+                              type="password" 
+                              className="form-input"
+                              placeholder={modalMode === 'edit' ? 'Keep existing password (********)' : 'Password'}
+                              value={formData.services.postgres.password}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  postgres: { ...formData.services.postgres, password: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* MongoDB Service */}
+                  <div className="service-config-item glass-panel">
+                    <label className="service-toggle">
+                      <input 
+                        type="checkbox"
+                        checked={formData.services?.mongo?.enabled || false}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          services: {
+                            ...formData.services,
+                            mongo: { ...formData.services.mongo, enabled: e.target.checked }
+                          }
+                        })}
+                      />
+                      <span className="service-toggle-label">MongoDB Document Client</span>
+                    </label>
+                    
+                    {formData.services?.mongo?.enabled && (
+                      <div className="service-fields">
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Port</label>
+                            <input 
+                              type="number" 
+                              className="form-input"
+                              placeholder="27017"
+                              value={formData.services.mongo.port}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  mongo: { ...formData.services.mongo, port: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Database Name</label>
+                            <input 
+                              type="text" 
+                              className="form-input"
+                              placeholder="admin"
+                              value={formData.services.mongo.database}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  mongo: { ...formData.services.mongo, database: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                        </div>
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Username</label>
+                            <input 
+                              type="text" 
+                              className="form-input"
+                              placeholder="optional"
+                              value={formData.services.mongo.username}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  mongo: { ...formData.services.mongo, username: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Password</label>
+                            <input 
+                              type="password" 
+                              className="form-input"
+                              placeholder={modalMode === 'edit' ? 'Keep existing password (********)' : 'optional'}
+                              value={formData.services.mongo.password}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  mongo: { ...formData.services.mongo, password: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Redis Service */}
+                  <div className="service-config-item glass-panel">
+                    <label className="service-toggle">
+                      <input 
+                        type="checkbox"
+                        checked={formData.services?.redis?.enabled || false}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          services: {
+                            ...formData.services,
+                            redis: { ...formData.services.redis, enabled: e.target.checked }
+                          }
+                        })}
+                      />
+                      <span className="service-toggle-label">Redis Cache Client</span>
+                    </label>
+                    
+                    {formData.services?.redis?.enabled && (
+                      <div className="service-fields">
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Port</label>
+                            <input 
+                              type="number" 
+                              className="form-input"
+                              placeholder="6379"
+                              value={formData.services.redis.port}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  redis: { ...formData.services.redis, port: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Password / Auth Token</label>
+                            <input 
+                              type="password" 
+                              className="form-input"
+                              placeholder={modalMode === 'edit' ? 'Keep existing password (********)' : 'optional'}
+                              value={formData.services.redis.password}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  redis: { ...formData.services.redis, password: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* RabbitMQ Service */}
+                  <div className="service-config-item glass-panel">
+                    <label className="service-toggle">
+                      <input 
+                        type="checkbox"
+                        checked={formData.services?.rabbitmq?.enabled || false}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          services: {
+                            ...formData.services,
+                            rabbitmq: { ...formData.services.rabbitmq, enabled: e.target.checked }
+                          }
+                        })}
+                      />
+                      <span className="service-toggle-label">RabbitMQ Broker Monitor</span>
+                    </label>
+                    
+                    {formData.services?.rabbitmq?.enabled && (
+                      <div className="service-fields">
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Port (AMQP or Management API)</label>
+                            <input 
+                              type="number" 
+                              className="form-input"
+                              placeholder="5672"
+                              value={formData.services.rabbitmq.port}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  rabbitmq: { ...formData.services.rabbitmq, port: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                        </div>
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Username</label>
+                            <input 
+                              type="text" 
+                              className="form-input"
+                              placeholder="guest"
+                              value={formData.services.rabbitmq.username}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  rabbitmq: { ...formData.services.rabbitmq, username: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Password</label>
+                            <input 
+                              type="password" 
+                              className="form-input"
+                              placeholder={modalMode === 'edit' ? 'Keep existing password (********)' : 'guest'}
+                              value={formData.services.rabbitmq.password}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  rabbitmq: { ...formData.services.rabbitmq, password: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* HAProxy Service */}
+                  <div className="service-config-item glass-panel">
+                    <label className="service-toggle">
+                      <input 
+                        type="checkbox"
+                        checked={formData.services?.haproxy?.enabled || false}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          services: {
+                            ...formData.services,
+                            haproxy: { ...formData.services.haproxy, enabled: e.target.checked }
+                          }
+                        })}
+                      />
+                      <span className="service-toggle-label">HAProxy Load Balancer Stats</span>
+                    </label>
+                    
+                    {formData.services?.haproxy?.enabled && (
+                      <div className="service-fields">
+                        <div className="form-group">
+                          <label className="form-label">Stats CSV URL</label>
+                          <input 
+                            type="text" 
+                            className="form-input"
+                            placeholder="http://localhost:1936/;csv"
+                            value={formData.services.haproxy.statsUrl}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              services: {
+                                ...formData.services,
+                                haproxy: { ...formData.services.haproxy, statsUrl: e.target.value }
+                              }
+                            })}
+                          />
+                        </div>
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">Stats Username</label>
+                            <input 
+                              type="text" 
+                              className="form-input"
+                              placeholder="optional"
+                              value={formData.services.haproxy.username}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  haproxy: { ...formData.services.haproxy, username: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Stats Password</label>
+                            <input 
+                              type="password" 
+                              className="form-input"
+                              placeholder={modalMode === 'edit' ? 'Keep existing password (********)' : 'optional'}
+                              value={formData.services.haproxy.password}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                services: {
+                                  ...formData.services,
+                                  haproxy: { ...formData.services.haproxy, password: e.target.value }
+                                }
+                              })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1505,6 +2067,244 @@ export default function App() {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+
+      {/* MACROS MANAGEMENT MODAL OVERLAY */}
+      <div className={`modal-overlay ${isMacrosModalOpen ? 'open' : ''}`}>
+        <div className="modal-container glass-panel macros-modal" style={{ maxWidth: '600px' }}>
+          <div className="modal-header">
+            <div className="modal-title">Manage Terminal Macros</div>
+            <button 
+              className="modal-close-btn" 
+              onClick={() => {
+                setIsMacrosModalOpen(false);
+                setIsMacroFormOpen(false);
+              }}
+            >
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            {isMacroFormOpen ? (
+              <form onSubmit={handleSaveMacro}>
+                <div style={{ marginBottom: '14px' }}>
+                  <label className="form-label">Macro Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Restart nginx"
+                    required
+                    value={macroFormData.name}
+                    onChange={(e) => setMacroFormData({ ...macroFormData, name: e.target.value })}
+                  />
+                </div>
+                <div style={{ marginBottom: '14px' }}>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Commands</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: 'normal' }}>One command per line — executed sequentially</span>
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    rows={5}
+                    placeholder={`e.g.\ncd /var/www/html\ngit pull\nsudo systemctl restart nginx`}
+                    required
+                    style={{ fontFamily: 'var(--font-mono)' }}
+                    value={macroFormData.command}
+                    onChange={(e) => setMacroFormData({ ...macroFormData, command: e.target.value })}
+                  />
+                </div>
+                <div style={{ marginBottom: '14px' }}>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Execution Mode</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setMacroFormData({ ...macroFormData, stepMode: false })}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        border: `1px solid ${!macroFormData.stepMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)'}`,
+                        background: !macroFormData.stepMode ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.03)',
+                        color: !macroFormData.stepMode ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{ fontWeight: '600', marginBottom: '2px' }}>⏱ Auto Delay</div>
+                      <div style={{ fontSize: '11px', opacity: 0.8 }}>Wait a fixed number of seconds between commands</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMacroFormData({ ...macroFormData, stepMode: true })}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        border: `1px solid ${macroFormData.stepMode ? '#f59e0b' : 'rgba(255,255,255,0.1)'}`,
+                        background: macroFormData.stepMode ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.03)',
+                        color: macroFormData.stepMode ? '#f59e0b' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{ fontWeight: '600', marginBottom: '2px' }}>⏸ Step Mode</div>
+                      <div style={{ fontSize: '11px', opacity: 0.8 }}>Pause after each command — you click Next to continue</div>
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    onClick={() => {
+                      setIsMacroFormOpen(false);
+                      setMacroFormData({ id: null, name: '', command: '', delay: 1, stepMode: false });
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary">
+                    {macroFormMode === 'create' ? 'Create Macro' : 'Update Macro'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => {
+                    setMacroFormMode('create');
+                    setMacroFormData({ id: null, name: '', command: '' });
+                    setIsMacroFormOpen(true);
+                  }}
+                >
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="16" height="16">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create New Macro
+                </button>
+
+                {macros.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--text-secondary)' }}>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="48" height="48" style={{ opacity: 0.5, marginBottom: '10px' }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p>No saved macros found. Macros allow you to execute predefined commands quickly on any terminal.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {macros.map((m) => (
+                      <div 
+                        key={m.id} 
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '12px',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden', marginRight: '16px', flex: 1 }}>
+                          <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{m.name}</span>
+                          <code style={{ fontSize: '12px', color: 'var(--accent-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {m.command.split('\n').filter(Boolean).join(' → ')}
+                          </code>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            {m.command.split('\n').filter(Boolean).length} command{m.command.split('\n').filter(Boolean).length !== 1 ? 's' : ''}
+                            {' · '}
+                            {m.stepMode ? (
+                              <span style={{ color: '#f59e0b' }}>⏸ step mode</span>
+                            ) : m.delays && m.delays.length > 0 ? (
+                              <span style={{ color: '#10b981' }}>⏱ recorded timing</span>
+                            ) : (
+                              <span>{m.delay ?? 1}s delay</span>
+                            )}
+                          </span>
+                        </div>
+                        {m.delays && m.delays.length > 0 && (
+                          <div style={{ marginRight: '12px', display: 'flex', alignItems: 'center' }}>
+                            <label style={{
+                              fontSize: '11px',
+                              color: 'var(--text-secondary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              background: 'rgba(255, 255, 255, 0.02)',
+                              border: '1px solid rgba(255, 255, 255, 0.05)',
+                              padding: '4px 8px',
+                              borderRadius: '4px'
+                            }}>
+                              <input 
+                                type="checkbox"
+                                checked={m.useSleepTiming !== false}
+                                onChange={(e) => handleToggleSleepTiming(m.id, e.target.checked)}
+                                style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                              />
+                              <span>Use Sleep Timings</span>
+                            </label>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            className="conn-action-btn"
+                            title="Edit Macro"
+                            onClick={() => {
+                              setMacroFormMode('edit');
+                              setMacroFormData({ id: m.id, name: m.name, command: m.command, delay: m.delay ?? 1, delays: m.delays ?? null, stepMode: m.stepMode ?? false });
+                              setIsMacroFormOpen(true);
+                            }}
+                          >
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className="conn-action-btn delete-btn"
+                            title="Delete Macro"
+                            onClick={() => handleDeleteMacro(m.id)}
+                          >
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          <div className="modal-footer">
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              onClick={() => {
+                setIsMacrosModalOpen(false);
+                setIsMacroFormOpen(false);
+              }}
+              style={{ width: '100%' }}
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

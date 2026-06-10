@@ -1,1 +1,6 @@
-show vm specs & usage
+macro for ssh
+redis client
+pg client
+mongo client
+rabbitmq client
+haproxy client

@@ -15,6 +15,7 @@ const DATA_DIR = xdgConfig
 
 const DB_FILE = path.join(DATA_DIR, 'connections.json');
 const KEY_FILE = path.join(DATA_DIR, 'secret.key');
+const MACROS_FILE = path.join(DATA_DIR, 'macros.json');
 
 // Ensure new configuration directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -124,17 +125,35 @@ function writeDB(data) {
   }
 }
 
+function getDefaultPort(srv) {
+  switch(srv) {
+    case 'postgres': return 5432;
+    case 'mongo': return 27017;
+    case 'redis': return 6379;
+    case 'rabbitmq': return 5672;
+    case 'haproxy': return 1936;
+    default: return 0;
+  }
+}
+
 export function getAllConnections(maskCredentials = true) {
   const connections = readDB();
-  if (maskCredentials) {
-    return connections.map(conn => {
-      const masked = { ...conn };
+  return connections.map(conn => {
+    const masked = { ...conn };
+    if (maskCredentials) {
       if (masked.password) masked.password = '********';
       if (masked.privateKey) masked.privateKey = '********';
-      return masked;
-    });
-  }
-  return connections;
+      if (masked.services) {
+        masked.services = JSON.parse(JSON.stringify(masked.services));
+        Object.keys(masked.services).forEach(srv => {
+          if (masked.services[srv] && masked.services[srv].password) {
+            masked.services[srv].password = '********';
+          }
+        });
+      }
+    }
+    return masked;
+  });
 }
 
 export function getConnectionById(id, decryptCredentials = false) {
@@ -143,6 +162,22 @@ export function getConnectionById(id, decryptCredentials = false) {
   if (!conn) return null;
 
   const result = { ...conn };
+  if (result.services) {
+    result.services = JSON.parse(JSON.stringify(result.services));
+    if (decryptCredentials) {
+      Object.keys(result.services).forEach(srv => {
+        if (result.services[srv] && result.services[srv].password) {
+          result.services[srv].password = decrypt(result.services[srv].password);
+        }
+      });
+    } else {
+      Object.keys(result.services).forEach(srv => {
+        if (result.services[srv] && result.services[srv].password) {
+          result.services[srv].password = '********';
+        }
+      });
+    }
+  }
   if (decryptCredentials) {
     if (result.password) result.password = decrypt(result.password);
     if (result.privateKey) result.privateKey = decrypt(result.privateKey);
@@ -160,7 +195,41 @@ export function createConnection(connData) {
     username: connData.username || 'root',
     authMethod: connData.authMethod || 'password', // 'password' or 'key'
     group: connData.group || 'Default',
-    created: new Date().toISOString()
+    created: new Date().toISOString(),
+    services: {
+      postgres: {
+        enabled: !!connData.services?.postgres?.enabled,
+        port: parseInt(connData.services?.postgres?.port, 10) || 5432,
+        database: connData.services?.postgres?.database || '',
+        username: connData.services?.postgres?.username || '',
+        password: connData.services?.postgres?.password ? encrypt(connData.services.postgres.password) : ''
+      },
+      mongo: {
+        enabled: !!connData.services?.mongo?.enabled,
+        port: parseInt(connData.services?.mongo?.port, 10) || 27017,
+        database: connData.services?.mongo?.database || '',
+        username: connData.services?.mongo?.username || '',
+        password: connData.services?.mongo?.password ? encrypt(connData.services.mongo.password) : ''
+      },
+      redis: {
+        enabled: !!connData.services?.redis?.enabled,
+        port: parseInt(connData.services?.redis?.port, 10) || 6379,
+        password: connData.services?.redis?.password ? encrypt(connData.services.redis.password) : ''
+      },
+      rabbitmq: {
+        enabled: !!connData.services?.rabbitmq?.enabled,
+        port: parseInt(connData.services?.rabbitmq?.port, 10) || 5672,
+        username: connData.services?.rabbitmq?.username || '',
+        password: connData.services?.rabbitmq?.password ? encrypt(connData.services.rabbitmq.password) : ''
+      },
+      haproxy: {
+        enabled: !!connData.services?.haproxy?.enabled,
+        port: parseInt(connData.services?.haproxy?.port, 10) || 1936,
+        statsUrl: connData.services?.haproxy?.statsUrl || '',
+        username: connData.services?.haproxy?.username || '',
+        password: connData.services?.haproxy?.password ? encrypt(connData.services.haproxy.password) : ''
+      }
+    }
   };
 
   if (newConn.authMethod === 'password' && connData.password) {
@@ -196,7 +265,41 @@ export function bulkCreateConnections(connectionsList, groupName) {
       username: connData.username || 'root',
       authMethod: connData.authMethod || 'password',
       group: matchedGroup,
-      created: new Date().toISOString()
+      created: new Date().toISOString(),
+      services: {
+        postgres: {
+          enabled: !!connData.services?.postgres?.enabled,
+          port: parseInt(connData.services?.postgres?.port, 10) || 5432,
+          database: connData.services?.postgres?.database || '',
+          username: connData.services?.postgres?.username || '',
+          password: connData.services?.postgres?.password ? encrypt(connData.services.postgres.password) : ''
+        },
+        mongo: {
+          enabled: !!connData.services?.mongo?.enabled,
+          port: parseInt(connData.services?.mongo?.port, 10) || 27017,
+          database: connData.services?.mongo?.database || '',
+          username: connData.services?.mongo?.username || '',
+          password: connData.services?.mongo?.password ? encrypt(connData.services.mongo.password) : ''
+        },
+        redis: {
+          enabled: !!connData.services?.redis?.enabled,
+          port: parseInt(connData.services?.redis?.port, 10) || 6379,
+          password: connData.services?.redis?.password ? encrypt(connData.services.redis.password) : ''
+        },
+        rabbitmq: {
+          enabled: !!connData.services?.rabbitmq?.enabled,
+          port: parseInt(connData.services?.rabbitmq?.port, 10) || 5672,
+          username: connData.services?.rabbitmq?.username || '',
+          password: connData.services?.rabbitmq?.password ? encrypt(connData.services.rabbitmq.password) : ''
+        },
+        haproxy: {
+          enabled: !!connData.services?.haproxy?.enabled,
+          port: parseInt(connData.services?.haproxy?.port, 10) || 1936,
+          statsUrl: connData.services?.haproxy?.statsUrl || '',
+          username: connData.services?.haproxy?.username || '',
+          password: connData.services?.haproxy?.password ? encrypt(connData.services.haproxy.password) : ''
+        }
+      }
     };
 
     if (newConn.authMethod === 'password' && connData.password) {
@@ -232,6 +335,35 @@ export function updateConnection(id, connUpdate) {
   existing.authMethod = connUpdate.authMethod ?? existing.authMethod;
   existing.group = connUpdate.group ?? existing.group;
   existing.updated = new Date().toISOString();
+
+  // For services: merge updates
+  if (connUpdate.services) {
+    existing.services = existing.services || {};
+    const servicesList = ['postgres', 'mongo', 'redis', 'rabbitmq', 'haproxy'];
+    
+    servicesList.forEach(srv => {
+      const updateSrv = connUpdate.services[srv] || {};
+      const existingSrv = existing.services[srv] || {};
+      
+      existing.services[srv] = {
+        enabled: updateSrv.enabled !== undefined ? !!updateSrv.enabled : !!existingSrv.enabled,
+        port: updateSrv.port !== undefined ? parseInt(updateSrv.port, 10) : (existingSrv.port || getDefaultPort(srv)),
+        database: updateSrv.database !== undefined ? updateSrv.database : (existingSrv.database || ''),
+        username: updateSrv.username !== undefined ? updateSrv.username : (existingSrv.username || ''),
+        statsUrl: updateSrv.statsUrl !== undefined ? updateSrv.statsUrl : (existingSrv.statsUrl || ''),
+        password: existingSrv.password || ''
+      };
+      
+      // Manage password: encrypt if updated and not masked '********'
+      if (updateSrv.password !== undefined) {
+        if (updateSrv.password === '') {
+          existing.services[srv].password = '';
+        } else if (updateSrv.password !== '********') {
+          existing.services[srv].password = encrypt(updateSrv.password);
+        }
+      }
+    });
+  }
 
   // Manage sensitive fields: only encrypt if updated and not the mask placeholder '********'
   if (existing.authMethod === 'password') {
@@ -284,3 +416,80 @@ export function deleteGroup(groupName) {
   }
   return deletedCount;
 }
+
+function readMacros() {
+  if (!fs.existsSync(MACROS_FILE)) {
+    fs.writeFileSync(MACROS_FILE, JSON.stringify([], null, 2));
+    return [];
+  }
+  try {
+    const data = fs.readFileSync(MACROS_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error reading macros database file:', error);
+    return [];
+  }
+}
+
+function writeMacros(data) {
+  try {
+    fs.writeFileSync(MACROS_FILE, JSON.stringify(data, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Error writing macros database file:', error);
+    return false;
+  }
+}
+
+export function getAllMacros() {
+  return readMacros();
+}
+
+export function createMacro(macroData) {
+  const macros = readMacros();
+  const newMacro = {
+    id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+    name: macroData.name || 'Unnamed Macro',
+    command: macroData.command || '',
+    delay: macroData.delay !== undefined ? Number(macroData.delay) : 1,
+    delays: Array.isArray(macroData.delays) ? macroData.delays.map(Number) : null,
+    useSleepTiming: macroData.useSleepTiming !== false,
+    stepMode: macroData.stepMode === true,
+    created: new Date().toISOString()
+  };
+  macros.push(newMacro);
+  writeMacros(macros);
+  return newMacro;
+}
+
+export function updateMacro(id, macroUpdate) {
+  const macros = readMacros();
+  const index = macros.findIndex(m => m.id === id);
+  if (index === -1) return null;
+
+  const existing = macros[index];
+  existing.name = macroUpdate.name ?? existing.name;
+  existing.command = macroUpdate.command ?? existing.command;
+  if (macroUpdate.delay !== undefined) existing.delay = Number(macroUpdate.delay);
+  if (macroUpdate.delays !== undefined) {
+    existing.delays = Array.isArray(macroUpdate.delays) ? macroUpdate.delays.map(Number) : null;
+  }
+  if (macroUpdate.useSleepTiming !== undefined) {
+    existing.useSleepTiming = macroUpdate.useSleepTiming === true;
+  }
+  if (macroUpdate.stepMode !== undefined) existing.stepMode = macroUpdate.stepMode === true;
+  existing.updated = new Date().toISOString();
+
+  macros[index] = existing;
+  writeMacros(macros);
+  return existing;
+}
+
+export function deleteMacro(id) {
+  const macros = readMacros();
+  const filtered = macros.filter(m => m.id !== id);
+  if (filtered.length === macros.length) return false;
+  writeMacros(filtered);
+  return true;
+}
+
