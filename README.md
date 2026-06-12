@@ -16,6 +16,21 @@ OmicronOps is a premium, lightweight, glassmorphic desktop DevOps & remote manag
   * Full file operations: create folders, rename files/directories, and delete items.
   * Drag-and-Drop files directly from your desktop file manager to upload.
   * Real-time transfer progress bars with speed ratios and active transfer cancellation.
+* **HAProxy Server Client/Manager**:
+  * Live stats proxy monitoring with real-time stats parsing.
+  * In-place controls to enable/disable backends and proxy servers instantly.
+* **RabbitMQ Monitor**:
+  * Visual queues and exchanges health tracking.
+  * Node health diagnostics and message/connection stats.
+* **PostgreSQL Database Client**:
+  * Tree-structured database schema, tables, and views explorer.
+  * Full data table browsing with sorting, filtering, and server-side pagination.
+  * Custom SQL Query Execution Console with interactive, tabular result sets.
+* **Redis Client Browser**:
+  * Namespace-delimited hierarchical key explorer tree view.
+  * Collapsible Interactive CLI Terminal with stderr security warnings filtration.
+  * Collapsible Live Redis Server Overview telemetry (replication states, active clients, uptime, memory, and CPU metrics).
+  * Rich inline values editor supporting Strings, Hashes, Lists, Sets, and Sorted Sets (ZSets).
 * **Clipboard Interoperability**:
   * **Highlight-to-Copy**: Highlighted terminal output is automatically copied to your system clipboard.
   * **Right-Click Paste**: Right-click paste support to transfer text from your clipboard directly into active PTY commands.
@@ -27,7 +42,7 @@ OmicronOps is a premium, lightweight, glassmorphic desktop DevOps & remote manag
 ## Tech Stack
 
 * **Frontend**: React, Vite, Vanilla CSS (Glassmorphism layout system), `xterm.js` for canvas-based shell rendering.
-* **Backend**: Node.js, Express, `ws` (WebSockets), `ssh2` (Pure Javascript SSH & SFTP fallback tunnel client).
+* **Backend**: Node.js, Express, `ws` (WebSockets), `ssh2` (Pure Javascript SSH & SFTP fallback tunnel client), `pg` (PostgreSQL client).
 * **Desktop Wrapper**: Electron (packaged into AppImage and Debian formats).
 
 ---
@@ -76,8 +91,8 @@ To package OmicronOps for distribution to other Linux systems:
    npm run dist
    ```
 2. Locate the compiled binaries in the `release/` directory:
-   * **`release/omicron-ops_1.0.0_amd64.deb`**: Standard Debian/Ubuntu installer.
-   * **`release/OmicronOps-1.0.0.AppImage`**: Portable, self-contained standalone executable.
+   * **`release/omicron-ops_1.0.4_amd64.deb`**: Standard Debian/Ubuntu installer.
+   * **`release/OmicronOps-1.0.4.AppImage`**: Portable, self-contained standalone executable.
 
 ---
 
@@ -92,6 +107,10 @@ To package OmicronOps for distribution to other Linux systems:
 │   ├── App.jsx            # Sidebar, tabs, and modals
 │   ├── TerminalTab.jsx    # Terminal component, colorizer
 │   ├── SftpExplorer.jsx   # SFTP UI, progress, CRUD
+│   ├── HaProxyClientTab.jsx # HAProxy statistics & server toggle controls
+│   ├── RabbitMqClientTab.jsx # RabbitMQ queues & exchange monitoring
+│   ├── PostgresClientTab.jsx # PostgreSQL schema explorer & SQL client
+│   ├── RedisClientTab.jsx  # Redis namespace browser, CLI terminal, and server stats
 │   ├── App.css            # Styles and color variables
 │   └── main.jsx           # App entry point
 ├── electron.js            # Electron main process entry
