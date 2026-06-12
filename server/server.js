@@ -29,6 +29,9 @@ const __dirname = path.dirname(__filename);
 // Active SSH connection sessions map: tabId -> sshClient
 const activeSessions = new Map();
 
+// Active database queries map: tabId -> { pgClient, tunnel, pid, connection, activeDb }
+const activeQueries = new Map();
+
 const app = express();
 const port = process.env.PORT || 0;
 
@@ -355,7 +358,7 @@ function createSshTunnel(sshClient, remoteHost, remotePort) {
 
 // Database Client API for executing real queries on remote host via SSH
 app.post('/api/db/postgres/query', async (req, res) => {
-  const { tabId, connection, activeDb, query } = req.body;
+  const { tabId, connection, activeDb, query, timeout } = req.body;
   if (!tabId) return res.status(400).json({ error: 'tabId is required' });
   const client = activeSessions.get(tabId);
   if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
@@ -376,6 +379,8 @@ app.post('/api/db/postgres/query', async (req, res) => {
     // 1. Establish SSH Port Forwarding Tunnel
     tunnel = await createSshTunnel(client, host, port);
 
+    const statementTimeoutMs = timeout !== undefined ? timeout * 1000 : 15000;
+
     // 2. Connect pg.Client to the local endpoint of the tunnel
     pgClient = new pg.Client({
       host: '127.0.0.1',
@@ -383,10 +388,17 @@ app.post('/api/db/postgres/query', async (req, res) => {
       user: username,
       password: password,
       database: dbName,
-      statement_timeout: 15000 // 15 seconds query timeout
+      statement_timeout: statementTimeoutMs
     });
 
     await pgClient.connect();
+
+    // Get the process ID of the database connection
+    const pidResult = await pgClient.query('SELECT pg_backend_pid() AS pid');
+    const pid = pidResult.rows[0].pid;
+
+    // Save active query information
+    activeQueries.set(tabId, { pgClient, tunnel, pid, connection, activeDb });
 
     // 3. Execute query
     const result = await pgClient.query({
@@ -418,6 +430,7 @@ app.post('/api/db/postgres/query', async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message || 'Database query error' });
   } finally {
+    activeQueries.delete(tabId);
     if (pgClient) {
       try {
         await pgClient.end();
@@ -432,6 +445,86 @@ app.post('/api/db/postgres/query', async (req, res) => {
         console.error("Error closing SSH tunnel:", e);
       }
     }
+  }
+});
+
+// Cancel a running database query
+app.post('/api/db/postgres/cancel', async (req, res) => {
+  const { tabId } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+
+  const activeQuery = activeQueries.get(tabId);
+  if (!activeQuery) {
+    return res.json({ success: true, message: 'No active query to cancel' });
+  }
+
+  const { pgClient, tunnel, pid, connection, activeDb } = activeQuery;
+  const client = activeSessions.get(tabId);
+
+  if (!client) {
+    try {
+      if (pgClient.connection && pgClient.connection.stream) {
+        pgClient.connection.stream.destroy();
+      } else {
+        await pgClient.end();
+      }
+    } catch (e) {}
+    try { await tunnel.close(); } catch (e) {}
+    activeQueries.delete(tabId);
+    return res.json({ success: true, message: 'SSH session not found, cleaned up local connection' });
+  }
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const pgConfig = dbConnection?.services?.postgres || connection?.services?.postgres || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = pgConfig.port || 5432;
+  const username = pgConfig.username || 'postgres';
+  const password = pgConfig.password && pgConfig.password !== '********' ? pgConfig.password : '';
+  const dbName = activeDb || pgConfig.database || 'postgres';
+
+  let cancelTunnel = null;
+  let cancelPgClient = null;
+
+  try {
+    cancelTunnel = await createSshTunnel(client, host, port);
+    cancelPgClient = new pg.Client({
+      host: '127.0.0.1',
+      port: cancelTunnel.port,
+      user: username,
+      password: password,
+      database: dbName,
+      statement_timeout: 5000
+    });
+
+    await cancelPgClient.connect();
+    await cancelPgClient.query('SELECT pg_cancel_backend($1)', [pid]);
+
+    try {
+      if (pgClient.connection && pgClient.connection.stream) {
+        pgClient.connection.stream.destroy();
+      } else {
+        await pgClient.end();
+      }
+    } catch (err) {
+      console.error("Error ending cancelled client:", err);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    try {
+      if (pgClient.connection && pgClient.connection.stream) {
+        pgClient.connection.stream.destroy();
+      }
+    } catch (e) {}
+    res.status(500).json({ error: err.message || 'Failed to cancel query' });
+  } finally {
+    if (cancelPgClient) {
+      try { await cancelPgClient.end(); } catch (e) {}
+    }
+    if (cancelTunnel) {
+      try { await cancelTunnel.close(); } catch (e) {}
+    }
+    activeQueries.delete(tabId);
   }
 });
 
@@ -635,6 +728,356 @@ app.post('/api/db/mongo/query', (req, res) => {
       } catch (parseErr) {
         res.status(500).json({ error: `Failed to parse query output: ${parseErr.message}`, rawOutput: stdout });
       }
+    });
+  });
+});
+
+// Helper for parsing redis-cli --csv output
+function parseCsvLines(stdout) {
+  const lines = stdout.split('\n');
+  const results = [];
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      results.push(trimmed.slice(1, -1).replace(/""/g, '"'));
+    } else if (trimmed) {
+      results.push(trimmed);
+    }
+  });
+  return results;
+}
+
+// Redis Endpoints
+app.post('/api/db/redis/info', (req, res) => {
+  const { tabId, connection } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const redisConfig = dbConnection?.services?.redis || connection?.services?.redis || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = redisConfig.port || 6379;
+  const password = redisConfig.password && redisConfig.password !== '********' ? redisConfig.password : '';
+
+  let redisCliCmd = `redis-cli -h ${host} -p ${port}`;
+  if (password) {
+    redisCliCmd += ` -a '${password}'`;
+  }
+
+  const cmd = `${redisCliCmd} INFO keyspace`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', data => stdout += data.toString());
+    stream.stderr.on('data', data => stderr += data.toString());
+    stream.on('close', () => {
+      const errOut = stderr.trim();
+      if (errOut && (errOut.includes('NOAUTH') || errOut.includes('invalid password') || errOut.includes('ERR'))) {
+        return res.status(400).json({ error: errOut });
+      }
+      if (stdout.includes('NOAUTH')) {
+        return res.status(401).json({ error: 'Redis authentication required' });
+      }
+
+      // Parse INFO keyspace (Format: db0:keys=10,expires=1,avg_ttl=17200)
+      const counts = {};
+      const lines = stdout.split('\n');
+      lines.forEach(line => {
+        const match = line.match(/^db(\d+):keys=(\d+)/);
+        if (match) {
+          counts[`db${match[1]}`] = parseInt(match[2], 10);
+        }
+      });
+      res.json({ success: true, keyspace: counts });
+    });
+  });
+});
+
+app.post('/api/db/redis/server-info', (req, res) => {
+  const { tabId, connection } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const redisConfig = dbConnection?.services?.redis || connection?.services?.redis || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = redisConfig.port || 6379;
+  const password = redisConfig.password && redisConfig.password !== '********' ? redisConfig.password : '';
+
+  let redisCliCmd = `redis-cli -h ${host} -p ${port}`;
+  if (password) {
+    redisCliCmd += ` -a '${password}'`;
+  }
+
+  const cmd = `${redisCliCmd} INFO`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', data => stdout += data.toString());
+    stream.stderr.on('data', data => stderr += data.toString());
+    stream.on('close', () => {
+      let cleanStderr = stderr.trim();
+      if (cleanStderr.includes("Warning: Using a password")) {
+        cleanStderr = cleanStderr.split('\n').filter(line => !line.includes("Warning: Using a password")).join('\n').trim();
+      }
+      if (cleanStderr && (cleanStderr.includes('NOAUTH') || cleanStderr.includes('invalid password') || cleanStderr.includes('ERR'))) {
+        return res.status(400).json({ error: cleanStderr });
+      }
+      if (stdout.includes('NOAUTH')) {
+        return res.status(401).json({ error: 'Redis authentication required' });
+      }
+
+      const info = {};
+      const lines = stdout.split('\n');
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const parts = trimmed.split(':');
+          if (parts.length >= 2) {
+            const key = parts[0].trim();
+            const value = parts.slice(1).join(':').trim();
+            info[key] = value;
+          }
+        }
+      });
+      res.json({ success: true, info });
+    });
+  });
+});
+
+
+app.post('/api/db/redis/keys', (req, res) => {
+  const { tabId, connection, dbIndex, filter } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const redisConfig = dbConnection?.services?.redis || connection?.services?.redis || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = redisConfig.port || 6379;
+  const password = redisConfig.password && redisConfig.password !== '********' ? redisConfig.password : '';
+
+  let redisCliCmd = `redis-cli -h ${host} -p ${port} -n ${dbIndex}`;
+  if (password) {
+    redisCliCmd += ` -a '${password}'`;
+  }
+
+  const pattern = filter ? `*${filter}*` : '*';
+  // Use Lua to fetch key name, type, and ttl in a single run-time JSON structure
+  const luaScript = `local keys = redis.call('keys', '${pattern.replace(/'/g, "\\'")}'); local res = {}; for i, k in ipairs(keys) do res[k] = {type = redis.call('type', k).ok, ttl = redis.call('ttl', k)} end; return cjson.encode(res)`;
+  const cmd = `${redisCliCmd} EVAL "${luaScript.replace(/"/g, '\\"')}" 0`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', data => stdout += data.toString());
+    stream.stderr.on('data', data => stderr += data.toString());
+    stream.on('close', () => {
+      const errOut = stderr.trim();
+      if (errOut && !stdout.trim()) {
+        return res.status(400).json({ error: errOut });
+      }
+      try {
+        let output = stdout.trim();
+        const start = output.indexOf('{');
+        const end = output.lastIndexOf('}');
+        if (start !== -1 && end !== -1) {
+          output = output.substring(start, end + 1);
+          const parsed = JSON.parse(output);
+          return res.json({ success: true, keys: parsed });
+        }
+        res.json({ success: true, keys: {} });
+      } catch (parseErr) {
+        res.status(500).json({ error: `Failed to parse keys JSON: ${parseErr.message}`, raw: stdout });
+      }
+    });
+  });
+});
+
+app.post('/api/db/redis/get', (req, res) => {
+  const { tabId, connection, dbIndex, key, type } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const redisConfig = dbConnection?.services?.redis || connection?.services?.redis || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = redisConfig.port || 6379;
+  const password = redisConfig.password && redisConfig.password !== '********' ? redisConfig.password : '';
+
+  let redisCliCmd = `redis-cli --csv -h ${host} -p ${port} -n ${dbIndex}`;
+  if (password) {
+    redisCliCmd += ` -a '${password}'`;
+  }
+
+  let subcmd = '';
+  if (type === 'string') {
+    subcmd = `GET "${key.replace(/"/g, '\\"')}"`;
+  } else if (type === 'hash') {
+    subcmd = `HGETALL "${key.replace(/"/g, '\\"')}"`;
+  } else if (type === 'list') {
+    subcmd = `LRANGE "${key.replace(/"/g, '\\"')}" 0 -1`;
+  } else if (type === 'set') {
+    subcmd = `SMEMBERS "${key.replace(/"/g, '\\"')}"`;
+  } else if (type === 'zset') {
+    subcmd = `ZRANGE "${key.replace(/"/g, '\\"')}" 0 -1 WITHSCORES`;
+  } else {
+    return res.status(400).json({ error: `Unknown key type: ${type}` });
+  }
+
+  const cmd = `${redisCliCmd} ${subcmd}`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', data => stdout += data.toString());
+    stream.stderr.on('data', data => stderr += data.toString());
+    stream.on('close', () => {
+      const errOut = stderr.trim();
+      if (errOut && !stdout.trim()) {
+        return res.status(400).json({ error: errOut });
+      }
+
+      const results = parseCsvLines(stdout);
+      let value = null;
+
+      if (type === 'string') {
+        value = results[0] || '';
+      } else if (type === 'hash') {
+        value = {};
+        for (let i = 0; i < results.length; i += 2) {
+          if (results[i] !== undefined) {
+            value[results[i]] = results[i + 1] || '';
+          }
+        }
+      } else if (type === 'list' || type === 'set') {
+        value = results;
+      } else if (type === 'zset') {
+        value = [];
+        for (let i = 0; i < results.length; i += 2) {
+          if (results[i] !== undefined) {
+            value.push({
+              member: results[i],
+              score: parseFloat(results[i + 1]) || 0
+            });
+          }
+        }
+      }
+
+      res.json({ success: true, value });
+    });
+  });
+});
+
+app.post('/api/db/redis/update', (req, res) => {
+  const { tabId, connection, dbIndex, action, key, field, value, index, score, ttl } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const redisConfig = dbConnection?.services?.redis || connection?.services?.redis || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = redisConfig.port || 6379;
+  const password = redisConfig.password && redisConfig.password !== '********' ? redisConfig.password : '';
+
+  let redisCliCmd = `redis-cli -h ${host} -p ${port} -n ${dbIndex}`;
+  if (password) {
+    redisCliCmd += ` -a '${password}'`;
+  }
+
+  let subcmd = '';
+  if (action === 'set-string') {
+    subcmd = `SET "${key.replace(/"/g, '\\"')}" "${value.replace(/"/g, '\\"')}"`;
+  } else if (action === 'set-ttl') {
+    if (ttl === -1) {
+      subcmd = `PERSIST "${key.replace(/"/g, '\\"')}"`;
+    } else {
+      subcmd = `EXPIRE "${key.replace(/"/g, '\\"')}" ${ttl}`;
+    }
+  } else if (action === 'hash-set') {
+    subcmd = `HSET "${key.replace(/"/g, '\\"')}" "${field.replace(/"/g, '\\"')}" "${value.replace(/"/g, '\\"')}"`;
+  } else if (action === 'hash-del') {
+    subcmd = `HDEL "${key.replace(/"/g, '\\"')}" "${field.replace(/"/g, '\\"')}"`;
+  } else if (action === 'list-push') {
+    subcmd = `RPUSH "${key.replace(/"/g, '\\"')}" "${value.replace(/"/g, '\\"')}"`;
+  } else if (action === 'list-set') {
+    subcmd = `LSET "${key.replace(/"/g, '\\"')}" ${index} "${value.replace(/"/g, '\\"')}"`;
+  } else if (action === 'list-del') {
+    subcmd = `EVAL "local val = redis.call('LINDEX', KEYS[1], ARGV[1]); redis.call('LREM', KEYS[1], 1, val)" 1 "${key.replace(/"/g, '\\"')}" ${index}`;
+  } else if (action === 'set-add') {
+    subcmd = `SADD "${key.replace(/"/g, '\\"')}" "${value.replace(/"/g, '\\"')}"`;
+  } else if (action === 'set-rem') {
+    subcmd = `SREM "${key.replace(/"/g, '\\"')}" "${value.replace(/"/g, '\\"')}"`;
+  } else if (action === 'zset-add') {
+    subcmd = `ZADD "${key.replace(/"/g, '\\"')}" ${score} "${value.replace(/"/g, '\\"')}"`;
+  } else if (action === 'zset-rem') {
+    subcmd = `ZREM "${key.replace(/"/g, '\\"')}" "${value.replace(/"/g, '\\"')}"`;
+  } else if (action === 'delete-key') {
+    subcmd = `DEL "${key.replace(/"/g, '\\"')}"`;
+  } else {
+    return res.status(400).json({ error: `Unknown action: ${action}` });
+  }
+
+  const cmd = `${redisCliCmd} ${subcmd}`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', data => stdout += data.toString());
+    stream.stderr.on('data', data => stderr += data.toString());
+    stream.on('close', () => {
+      const errOut = stderr.trim();
+      if (errOut && !stdout.trim()) {
+        return res.status(400).json({ error: errOut });
+      }
+      res.json({ success: true, output: stdout.trim() });
+    });
+  });
+});
+
+app.post('/api/db/redis/cli', (req, res) => {
+  const { tabId, connection, dbIndex, command } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const redisConfig = dbConnection?.services?.redis || connection?.services?.redis || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = redisConfig.port || 6379;
+  const password = redisConfig.password && redisConfig.password !== '********' ? redisConfig.password : '';
+
+  let redisCliCmd = `redis-cli -h ${host} -p ${port} -n ${dbIndex}`;
+  if (password) {
+    redisCliCmd += ` -a '${password}'`;
+  }
+
+  const cmd = `${redisCliCmd} ${command}`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', data => stdout += data.toString());
+    stream.stderr.on('data', data => stderr += data.toString());
+    stream.on('close', () => {
+      res.json({ 
+        success: true, 
+        stdout: stdout,
+        stderr: stderr
+      });
     });
   });
 });

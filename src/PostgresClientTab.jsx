@@ -115,6 +115,63 @@ export function PostgreSqlView({ connection, tabId }) {
   const [maintenanceModal, setMaintenanceModal] = useState(null); // { table, action, data, loading, error }
   const [tableMenuOpen, setTableMenuOpen] = useState(null); // table name with open menu
 
+  // Sidebar table search & width resize states
+  const [tableSearch, setTableSearch] = useState('');
+  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const [queryTimeout, setQueryTimeout] = useState(15); // manual query timeout in seconds (0 = disabled)
+  const [isMaintenanceMinimized, setIsMaintenanceMinimized] = useState(false);
+  const [tabs, setTabsList] = useState([]);
+  const [activeTabId, setActiveTabId] = useState(null);
+  const activeTabIdRef = useRef(activeTabId);
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  // Sync active states back to the tabs list in real-time
+  useEffect(() => {
+    if (!activeTabId) return;
+    setTabsList(prev => prev.map(t => {
+      if (t.id === activeTabId) {
+        return {
+          ...t,
+          selectedItem,
+          queryText,
+          queryResults,
+          currentPage,
+          pageSize,
+          pendingEdits,
+          newRow,
+          selectedRows,
+          editingCell,
+          editingValue,
+          saveError,
+          saveSuccess,
+          newRowError,
+          deleteError
+        };
+      }
+      return t;
+    }));
+  }, [
+    activeTabId,
+    selectedItem,
+    queryText,
+    queryResults,
+    currentPage,
+    pageSize,
+    pendingEdits,
+    newRow,
+    selectedRows,
+    editingCell,
+    editingValue,
+    saveError,
+    saveSuccess,
+    newRowError,
+    deleteError
+  ]);
+
   // Refs for scroll sync in SQL editor
   const textareaRef = useRef(null);
   const overlayRef = useRef(null);
@@ -173,11 +230,15 @@ export function PostgreSqlView({ connection, tabId }) {
     setDatabases([]);
     setTables([]);
     setFunctions([]);
+    setTabsList([]);
+    setActiveTabId(null);
   };
 
   useEffect(() => {
     if (!isConnected || !tabId) return;
     
+    setTabsList([]);
+    setActiveTabId(null);
     setCurrentPage(1);
     setTables([]);
     setFunctions([]);
@@ -203,7 +264,9 @@ export function PostgreSqlView({ connection, tabId }) {
         const tableNames = data.rows.map(r => r.table_name).filter(Boolean);
         setTables(tableNames);
         if (tableNames.length > 0) {
-          handleItemSelect('table', tableNames[0], activeDb);
+          openOrSelectTab('table', tableNames[0], activeDb);
+        } else {
+          openNewQueryTab();
         }
       }
     })
@@ -231,25 +294,181 @@ export function PostgreSqlView({ connection, tabId }) {
     .catch(err => console.error("Error loading routines:", err));
   }, [activeDb, activeSchema, isConnected, tabId]);
 
-  const handleItemSelect = (type, name, currentDb = activeDb) => {
-    setCurrentPage(1);
-    setSelectedItem({ type, name });
+  const loadTabState = (targetTab) => {
+    setSelectedItem(targetTab.selectedItem || { type: 'query', name: '' });
+    setQueryText(targetTab.queryText || '');
+    setQueryResults(targetTab.queryResults || null);
+    setCurrentPage(targetTab.currentPage || 1);
+    setPageSize(targetTab.pageSize || 10);
+    setPendingEdits(targetTab.pendingEdits || []);
+    setNewRow(targetTab.newRow || null);
+    setSelectedRows(targetTab.selectedRows || new Set());
+    setEditingCell(targetTab.editingCell || null);
+    setEditingValue(targetTab.editingValue || '');
+    setSaveError(targetTab.saveError || null);
+    setSaveSuccess(targetTab.saveSuccess || null);
+    setNewRowError(targetTab.newRowError || null);
+    setDeleteError(targetTab.deleteError || null);
+  };
+
+  const handleTabClick = (targetTabId) => {
+    if (activeTabId === targetTabId) return;
+    const targetTab = tabs.find(t => t.id === targetTabId);
+    if (targetTab) {
+      setActiveTabId(targetTabId);
+      loadTabState(targetTab);
+    }
+  };
+
+  const openOrSelectTab = (type, name, currentDb = activeDb) => {
+    const tabKey = `${type}-${name}`;
+    const existingTab = tabs.find(t => t.id === tabKey);
+    if (existingTab) {
+      setActiveTabId(tabKey);
+      loadTabState(existingTab);
+      return;
+    }
+
     let query = '';
     if (type === 'table') {
-      query = `SELECT * FROM "${activeSchema}"."${name}" LIMIT 10;`;
+      query = `SELECT * FROM "${activeSchema}"."${name}" LIMIT 100;`;
     } else {
       query = `SELECT "${activeSchema}"."${name}"();`;
     }
+
+    const newTab = {
+      id: tabKey,
+      type: type,
+      title: name,
+      tableName: name,
+      selectedItem: { type, name },
+      queryText: query,
+      queryResults: { loading: true, success: true, columns: [], rows: [] },
+      currentPage: 1,
+      pageSize: 10,
+      pendingEdits: [],
+      newRow: null,
+      selectedRows: new Set(),
+      editingCell: null,
+      editingValue: '',
+      saveError: null,
+      saveSuccess: null,
+      newRowError: null,
+      deleteError: null
+    };
+
+    setTabsList(prev => [...prev, newTab]);
+    setActiveTabId(tabKey);
+
+    // Initialize states immediately
+    setSelectedItem({ type, name });
     setQueryText(query);
-    setQueryResults(null);
-    runRealQuery(query, currentDb);
+    setQueryResults({ loading: true, success: true, columns: [], rows: [] });
+    setCurrentPage(1);
+    setPageSize(10);
+    setPendingEdits([]);
+    setNewRow(null);
+    setSelectedRows(new Set());
+    setEditingCell(null);
+    setEditingValue('');
+    setSaveError(null);
+    setSaveSuccess(null);
+    setNewRowError(null);
+    setDeleteError(null);
+
+    runRealQueryForTab(query, tabKey, currentDb);
   };
 
-  const runRealQuery = (query, dbName = activeDb) => {
+  const openNewQueryTab = () => {
+    const queryNum = tabs.filter(t => t.type === 'query').length + 1;
+    const tabKey = `query-tab-${Date.now()}`;
+    
+    const newTab = {
+      id: tabKey,
+      type: 'query',
+      title: `Query ${queryNum}`,
+      selectedItem: { type: 'query', name: '' },
+      queryText: '-- Write your SQL query here\n',
+      queryResults: null,
+      currentPage: 1,
+      pageSize: 10,
+      pendingEdits: [],
+      newRow: null,
+      selectedRows: new Set(),
+      editingCell: null,
+      editingValue: '',
+      saveError: null,
+      saveSuccess: null,
+      newRowError: null,
+      deleteError: null
+    };
+
+    setTabsList(prev => [...prev, newTab]);
+    setActiveTabId(tabKey);
+
+    setSelectedItem({ type: 'query', name: '' });
+    setQueryText('-- Write your SQL query here\n');
+    setQueryResults(null);
+    setCurrentPage(1);
+    setPageSize(10);
+    setPendingEdits([]);
+    setNewRow(null);
+    setSelectedRows(new Set());
+    setEditingCell(null);
+    setEditingValue('');
+    setSaveError(null);
+    setSaveSuccess(null);
+    setNewRowError(null);
+    setDeleteError(null);
+  };
+
+  const closeTab = (tabIdToClose, e) => {
+    e.stopPropagation();
+    const index = tabs.findIndex(t => t.id === tabIdToClose);
+    if (index === -1) return;
+
+    const nextTabs = tabs.filter(t => t.id !== tabIdToClose);
+    setTabsList(nextTabs);
+
+    if (activeTabId === tabIdToClose) {
+      if (nextTabs.length > 0) {
+        const nextActiveIndex = Math.max(0, index - 1);
+        const nextActiveTab = nextTabs[nextActiveIndex];
+        setActiveTabId(nextActiveTab.id);
+        loadTabState(nextActiveTab);
+      } else {
+        setActiveTabId(null);
+        setSelectedItem({ type: 'query', name: '' });
+        setQueryText('');
+        setQueryResults(null);
+      }
+    }
+  };
+
+  const updateTabResults = (targetTabId, resultsData) => {
+    setTabsList(prev => prev.map(t => {
+      if (t.id === targetTabId) {
+        return {
+          ...t,
+          queryResults: resultsData,
+          pendingEdits: [],
+          saveError: null,
+          saveSuccess: null
+        };
+      }
+      return t;
+    }));
+  };
+
+  const runRealQueryForTab = (queryToRun, targetTabId, dbName = activeDb) => {
     if (!tabId) return;
-    
-    setQueryResults({ loading: true, success: true, columns: [], rows: [] });
-    
+
+    const loadingState = { loading: true, success: true, columns: [], rows: [] };
+    updateTabResults(targetTabId, loadingState);
+    if (activeTabIdRef.current === targetTabId) {
+      setQueryResults(loadingState);
+    }
+
     fetch('/api/db/postgres/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -257,7 +476,8 @@ export function PostgreSqlView({ connection, tabId }) {
         tabId,
         connection,
         database: dbName,
-        query: query
+        query: queryToRun,
+        timeout: queryTimeout
       })
     })
     .then(res => {
@@ -267,34 +487,75 @@ export function PostgreSqlView({ connection, tabId }) {
       return res.json();
     })
     .then(data => {
-      if (data.success) {
-        setQueryResults({
-          success: true,
-          rows: data.rows || [],
-          columns: data.columns || [],
-          columnTypes: data.columnTypes || {}
-        });
+      const resultsData = data.success ? {
+        success: true,
+        rows: data.rows || [],
+        columns: data.columns || [],
+        columnTypes: data.columnTypes || {}
+      } : {
+        success: false,
+        error: data.error || 'Query returned unsuccessful status.'
+      };
+
+      updateTabResults(targetTabId, resultsData);
+      if (activeTabIdRef.current === targetTabId) {
+        setQueryResults(resultsData);
         setPendingEdits([]);
         setSaveError(null);
         setSaveSuccess(null);
-      } else {
-        setQueryResults({
-          success: false,
-          error: data.error || 'Query returned unsuccessful status.'
-        });
       }
     })
     .catch(err => {
-      setQueryResults({
+      const errorState = {
         success: false,
         error: err.message || 'Network error executing query.'
-      });
+      };
+      updateTabResults(targetTabId, errorState);
+      if (activeTabIdRef.current === targetTabId) {
+        setQueryResults(errorState);
+      }
     });
   };
 
   const runQuery = () => {
     setCurrentPage(1);
-    runRealQuery(queryText);
+    runRealQueryForTab(queryText, activeTabId);
+  };
+
+  const stopQuery = async () => {
+    if (!tabId) return;
+    try {
+      const resp = await fetch('/api/db/postgres/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tabId })
+      });
+      const data = await resp.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to stop query');
+      }
+    } catch (err) {
+      console.error("Error stopping query:", err);
+      alert(err.message || 'Failed to stop query');
+    }
+  };
+
+  const cancelMaintenanceTask = async () => {
+    if (!tabId) return;
+    try {
+      const resp = await fetch('/api/db/postgres/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tabId })
+      });
+      const data = await resp.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to cancel maintenance task');
+      }
+    } catch (err) {
+      console.error("Error cancelling maintenance task:", err);
+      alert(err.message || 'Failed to cancel maintenance task');
+    }
   };
 
   // Sync scroll between textarea and highlights overlay
@@ -558,12 +819,13 @@ export function PostgreSqlView({ connection, tabId }) {
 
   // ---- Table Maintenance Actions ----
   const runMaintenanceQuery = async (table, action, query, isCommand = false) => {
+    setIsMaintenanceMinimized(false);
     setMaintenanceModal({ table, action, data: null, loading: true, error: null });
     try {
       const resp = await fetch('/api/db/postgres/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tabId, connection, activeDb, query })
+        body: JSON.stringify({ tabId, connection, activeDb, query, timeout: 0 })
       });
       const data = await resp.json();
       if (!data.success) throw new Error(data.error || 'Query failed');
@@ -636,6 +898,37 @@ export function PostgreSqlView({ connection, tabId }) {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizing]);
+
+  // Sidebar drag resizer handlers (horizontal)
+  const handleSidebarMouseDown = (e) => {
+    e.preventDefault();
+    setIsResizingSidebar(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizingSidebar) return;
+      // enforce min 150px and max 600px
+      const newWidth = e.clientX;
+      if (newWidth > 150 && newWidth < 600) {
+        setSidebarWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingSidebar(false);
+    };
+
+    if (isResizingSidebar) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingSidebar]);
 
   if (!isConnected) {
     return (
@@ -777,6 +1070,30 @@ export function PostgreSqlView({ connection, tabId }) {
           background: rgba(255,255,255,0.25);
           border-radius: 1px;
         }
+        .horizontal-resizer-bar {
+          width: 4px;
+          background: rgba(255,255,255,0.06);
+          cursor: col-resize;
+          transition: background 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-left: 1px solid var(--panel-border);
+          border-right: 1px solid var(--panel-border);
+          user-select: none;
+          flex-shrink: 0;
+          height: 100%;
+        }
+        .horizontal-resizer-bar:hover, .horizontal-resizer-bar.active {
+          background: var(--accent-primary);
+        }
+        .horizontal-resizer-bar::after {
+          content: '';
+          width: 2px;
+          height: 20px;
+          background: rgba(255,255,255,0.25);
+          border-radius: 1px;
+        }
         .db-sidebar-section-header {
           display: flex;
           justify-content: space-between;
@@ -820,7 +1137,7 @@ export function PostgreSqlView({ connection, tabId }) {
         }
       `}</style>
 
-      <div className="db-sidebar glass-panel">
+      <div className="db-sidebar glass-panel" style={{ width: `${sidebarWidth}px`, flexShrink: 0 }}>
         <div className="db-sidebar-header">
           <div className="db-sidebar-title">Database Explorer</div>
           
@@ -851,7 +1168,7 @@ export function PostgreSqlView({ connection, tabId }) {
           </div>
         </div>
 
-        <div className="db-sidebar-list" style={{ overflowY: 'auto', flexGrow: 1, padding: '12px' }}>
+        <div className="db-sidebar-list" style={{ overflow: 'auto', flexGrow: 1, padding: '12px' }}>
           
           {/* Tables Collapsible Section */}
           <div className="db-sidebar-section-header" onClick={() => setTablesCollapsed(!tablesCollapsed)}>
@@ -860,12 +1177,31 @@ export function PostgreSqlView({ connection, tabId }) {
           </div>
           {!tablesCollapsed && (
             <div className="db-sidebar-list-inner" style={{ paddingLeft: '4px', marginTop: '4px' }}>
-              {tables.map(t => (
-                <div key={t} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <div style={{ padding: '4px 6px 8px 6px' }}>
+                <input
+                  type="text"
+                  placeholder="Filter tables..."
+                  value={tableSearch}
+                  onChange={e => setTableSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '5px 8px',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--panel-border)',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    fontSize: '0.75rem',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              {tables.filter(t => t.toLowerCase().includes(tableSearch.toLowerCase())).map(t => (
+                <div key={t} style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: '100%', width: 'max-content' }}>
                   <button
                     className={`db-list-item ${selectedItem.type === 'table' && selectedItem.name === t ? 'active' : ''}`}
-                    onClick={() => handleItemSelect('table', t)}
-                    style={{ flex: 1, border: 'none', background: 'transparent', textAlign: 'left', paddingRight: '28px' }}
+                    onClick={() => openOrSelectTab('table', t)}
+                    style={{ flex: 1, border: 'none', background: 'transparent', textAlign: 'left', paddingRight: '28px', textOverflow: 'unset', overflow: 'visible' }}
                   >
                     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -932,7 +1268,7 @@ export function PostgreSqlView({ connection, tabId }) {
                 <button
                   key={f}
                   className={`db-list-item ${selectedItem.type === 'function' && selectedItem.name === f ? 'active' : ''}`}
-                  onClick={() => handleItemSelect('function', f)}
+                  onClick={() => openOrSelectTab('function', f)}
                   style={{ width: '100%', border: 'none', background: 'transparent', textAlign: 'left' }}
                 >
                   <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
@@ -960,13 +1296,180 @@ export function PostgreSqlView({ connection, tabId }) {
         </div>
       </div>
 
-      <div className="db-main-content" ref={containerRef}>
+      {/* Horizontal resizer bar */}
+      <div 
+        className={`horizontal-resizer-bar ${isResizingSidebar ? 'active' : ''}`}
+        onMouseDown={handleSidebarMouseDown}
+      />
+
+      <div className="db-main-content" ref={containerRef} style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, height: '100%' }}>
         
-        {/* SQL Query Runner Panel with resizable height */}
+        {/* Tab Bar */}
+        <div className="pg-tabs-bar" style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: 'rgba(0,0,0,0.2)',
+          borderBottom: '1px solid var(--panel-border)',
+          flexShrink: 0,
+          overflowX: 'auto',
+          padding: '0 8px',
+          gap: '4px',
+          height: '36px',
+          boxSizing: 'border-box'
+        }}>
+          {tabs.map(tab => (
+            <div
+              key={tab.id}
+              onClick={() => handleTabClick(tab.id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '0 12px',
+                height: '35px',
+                background: activeTabId === tab.id ? 'var(--panel-bg)' : 'transparent',
+                borderBottom: activeTabId === tab.id ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background 0.15s, border-color 0.15s',
+                borderTopLeftRadius: '4px',
+                borderTopRightRadius: '4px',
+                color: activeTabId === tab.id ? '#fff' : 'var(--text-muted)',
+                fontSize: '0.75rem',
+                fontWeight: activeTabId === tab.id ? '600' : 'normal',
+                boxSizing: 'border-box',
+                whiteSpace: 'nowrap'
+              }}
+              className="pg-tab-item"
+            >
+              <span>{tab.type === 'table' ? '📋' : '⚡'}</span>
+              <span>{tab.title}</span>
+              <button
+                onClick={(e) => closeTab(tab.id, e)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '50%',
+                  width: '14px',
+                  height: '14px',
+                  opacity: 0.6,
+                  transition: 'opacity 0.15s, background 0.15s'
+                }}
+                className="pg-tab-close-btn"
+                onMouseEnter={e => {
+                  e.currentTarget.style.opacity = '1';
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.opacity = '0.6';
+                  e.currentTarget.style.background = 'none';
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          
+          <button
+            onClick={openNewQueryTab}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '6px 10px',
+              fontSize: '0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'color 0.15s'
+            }}
+            title="Open new query tab"
+            onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+          >
+            <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>+</span>
+            <span>New Query</span>
+          </button>
+        </div>
+
+        {tabs.length === 0 ? (
+          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', gap: '8px' }}>
+            <span>No active tabs</span>
+            <span style={{ fontSize: '0.75rem' }}>Select a table from the sidebar or click "+ New Query" to start working.</span>
+            <button 
+              onClick={openNewQueryTab} 
+              style={{
+                marginTop: '12px',
+                background: 'var(--accent-primary)',
+                border: 'none',
+                borderRadius: '4px',
+                color: '#fff',
+                padding: '6px 16px',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                fontWeight: '600'
+              }}
+            >
+              Open New Query Tab
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* SQL Query Runner Panel with resizable height */}
         <div className="query-runner-panel glass-panel" style={{ height: `${editorHeight}px`, display: 'flex', flexDirection: 'column' }}>
-          <div className="query-actions-row" style={{ flexShrink: 0 }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>SQL Query Runner ({activeSchema})</span>
-            <button className="run-query-btn" onClick={runQuery} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--accent-primary)', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: '600' }}>
+          <div className="query-actions-row" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: '600', marginRight: 'auto' }}>SQL Query Runner ({activeSchema})</span>
+            
+            {/* Manual Query Timeout Setting */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--panel-border)', borderRadius: '4px', padding: '4px 8px', height: '28px', boxSizing: 'border-box' }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Timeout:</span>
+              <input
+                type="number"
+                min="0"
+                value={queryTimeout}
+                onChange={e => setQueryTimeout(Math.max(0, parseInt(e.target.value) || 0))}
+                style={{
+                  width: '38px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#fff',
+                  fontSize: '0.75rem',
+                  outline: 'none',
+                  textAlign: 'center',
+                  fontWeight: '600',
+                  padding: 0,
+                  margin: 0
+                }}
+                title="Query statement timeout in seconds (0 = disabled)"
+              />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>s</span>
+            </div>
+
+            {queryResults?.loading && (
+              <button 
+                className="stop-query-btn" 
+                onClick={stopQuery} 
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: '600' }}
+              >
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+                  <rect x="4" y="4" width="16" height="16" rx="2" />
+                </svg>
+                Stop Query
+              </button>
+            )}
+            <button 
+              className="run-query-btn" 
+              onClick={runQuery} 
+              disabled={queryResults?.loading}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: queryResults?.loading ? '#475569' : 'var(--accent-primary)', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: queryResults?.loading ? 'not-allowed' : 'pointer', fontWeight: '600' }}
+            >
               <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
                 <path d="M8 5v14l11-7z" />
               </svg>
@@ -1326,11 +1829,13 @@ export function PostgreSqlView({ connection, tabId }) {
               </div>
             </div>
           )}
-        </div>
+          </div>
+          </>
+        )}
       </div>
       {/* Table Maintenance Modal */}
-      {maintenanceModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }} onClick={() => setMaintenanceModal(null)}>
+      {maintenanceModal && !isMaintenanceMinimized && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }} onClick={() => { if (!maintenanceModal.loading) setMaintenanceModal(null); }}>
           <div style={{ background: '#1a1d27', border: '1px solid var(--panel-border)', borderRadius: '10px', width: '100%', maxWidth: '860px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.7)' }} onClick={e => e.stopPropagation()}>
             {/* Modal header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--panel-border)', flexShrink: 0 }}>
@@ -1338,9 +1843,37 @@ export function PostgreSqlView({ connection, tabId }) {
                 <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#fff' }}>{maintenanceModal.action}</div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Table: <span style={{ color: '#818cf8' }}>{maintenanceModal.table}</span></div>
               </div>
-              <button onClick={() => setMaintenanceModal(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}>
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {maintenanceModal.loading && (
+                  <button 
+                    onClick={cancelMaintenanceTask} 
+                    style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}
+                    title="Cancel maintenance task"
+                  >
+                    <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor">
+                      <rect x="4" y="4" width="16" height="16" rx="2" />
+                    </svg>
+                    Cancel Task
+                  </button>
+                )}
+                <button 
+                  onClick={() => setIsMaintenanceMinimized(true)} 
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                  title="Minimize"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+                <button 
+                  onClick={() => setMaintenanceModal(null)} 
+                  disabled={maintenanceModal.loading}
+                  style={{ background: 'none', border: 'none', color: maintenanceModal.loading ? '#475569' : 'var(--text-muted)', cursor: maintenanceModal.loading ? 'not-allowed' : 'pointer', padding: '4px' }}
+                  title={maintenanceModal.loading ? "Cannot close while running" : "Close"}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
             </div>
             {/* Modal body */}
             <div style={{ overflowY: 'auto', padding: '16px 18px', flexGrow: 1 }}>
@@ -1396,6 +1929,72 @@ export function PostgreSqlView({ connection, tabId }) {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Minimized Maintenance Task Bar */}
+      {maintenanceModal && isMaintenanceMinimized && (
+        <div 
+          onClick={() => setIsMaintenanceMinimized(false)}
+          style={{
+            position: 'absolute',
+            bottom: '16px',
+            right: '16px',
+            zIndex: 999,
+            background: '#1a1d27',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '6px',
+            padding: '8px 12px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            cursor: 'pointer',
+            transition: 'background 0.2s',
+            userSelect: 'none'
+          }}
+          className="minimized-task-bar"
+        >
+          {maintenanceModal.loading ? (
+            <span className="spinner-small" style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-primary)', width: '12px', height: '12px' }}></span>
+          ) : maintenanceModal.error ? (
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#f87171" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#10b981" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+          )}
+          
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#fff' }}>
+              {maintenanceModal.action} ({maintenanceModal.table})
+            </span>
+            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+              {maintenanceModal.loading ? 'Running...' : maintenanceModal.error ? 'Failed/Stopped' : 'Completed'}
+            </span>
+          </div>
+
+          {maintenanceModal.loading && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                cancelMaintenanceTask();
+              }}
+              style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: 'none',
+                color: '#f87171',
+                padding: '4px 6px',
+                borderRadius: '3px',
+                fontSize: '0.65rem',
+                cursor: 'pointer',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px'
+              }}
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
     </div>

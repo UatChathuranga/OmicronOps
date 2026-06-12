@@ -3038,3 +3038,352 @@ body.resizing-row {
 .db-pagination-bar .page-size-selector select:hover {
   border-color: rgba(255, 255, 255, 0.2);
 }
+
+/* Redis Key Tree & Database Explorer Custom Styles */
+.redis-explorer-container {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: rgba(10, 15, 30, 0.2);
+}
+
+.redis-left-panel {
+  width: 290px;
+  background: rgba(8, 12, 24, 0.45);
+  border-right: 1px solid var(--panel-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.redis-right-panel {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+  height: 100%;
+  gap: 16px;
+  box-sizing: border-box;
+}
+
+.redis-db-list {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 8px 4px;
+}
+
+.redis-db-node {
+  margin-bottom: 4px;
+}
+
+.redis-db-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  transition: all 0.2s ease;
+  user-select: none;
+  border-radius: 6px;
+  margin: 1px 4px;
+  gap: 8px;
+}
+
+.redis-db-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f1f5f9;
+}
+
+.redis-db-header.active {
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  color: #818cf8;
+}
+
+.db-arrow-icon {
+  font-size: 0.65rem;
+  width: 10px;
+  display: inline-block;
+  opacity: 0.7;
+}
+
+.db-svg-icon {
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.db-name {
+  font-weight: 600;
+  flex-grow: 1;
+  letter-spacing: 0.5px;
+}
+
+.db-count-badge {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.redis-db-keys-tree {
+  margin-left: 20px;
+  border-left: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-left: 6px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+.redis-tree-filter-wrapper {
+  position: relative;
+  margin: 4px 6px 8px 6px;
+}
+
+.redis-tree-filter-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-border);
+  color: #fff;
+  border-radius: 4px;
+  padding: 5px 22px 5px 8px;
+  font-size: 0.75rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.redis-tree-filter-input:focus {
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.redis-tree-filter-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.redis-tree-filter-clear:hover {
+  color: #fff;
+}
+
+.redis-tree-node-row {
+  display: flex;
+  align-items: center;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  transition: all 0.15s ease;
+  user-select: none;
+  border-radius: 4px;
+  margin: 1px 2px;
+  gap: 6px;
+}
+
+.redis-tree-node-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.redis-tree-node-row.active {
+  background: var(--accent-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.redis-tree-node-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-grow: 1;
+}
+
+.redis-folder-arrow {
+  font-size: 0.6rem;
+  width: 8px;
+  opacity: 0.6;
+}
+
+.redis-folder-icon {
+  color: #f59e0b;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.no-keys-tree-msg {
+  padding: 6px 12px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.redis-key-edit-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.redis-key-meta-rows {
+  display: flex;
+  gap: 16px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  margin-bottom: 14px;
+}
+
+.meta-row {
+  display: flex;
+  gap: 6px;
+  font-size: 0.72rem;
+}
+
+.meta-row span:first-child {
+  color: var(--text-muted);
+}
+
+.meta-row span:last-child {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Redis Type Colors Badge */
+.key-type-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  color: #fff;
+  min-width: 32px;
+  text-align: center;
+  display: inline-block;
+  line-height: 1.2;
+}
+
+.key-type-badge.string { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+.key-type-badge.hash { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+.key-type-badge.list { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.key-type-badge.set { background: rgba(139, 92, 246, 0.2); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.3); }
+.key-type-badge.zset { background: rgba(236, 72, 153, 0.2); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
+
+/* Table Editor styling for Redis Types */
+.redis-editor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  margin-top: 6px;
+  margin-bottom: 12px;
+}
+
+.redis-editor-table th {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--panel-border);
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.redis-editor-table td {
+  border: 1px solid var(--panel-border);
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.redis-editor-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.redis-editor-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #fff;
+  padding: 3px 6px;
+  font-size: 0.75rem;
+  outline: none;
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+
+.redis-editor-input:focus {
+  background: rgba(0, 0, 0, 0.4);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.redis-editor-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.redis-editor-action-btn:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.redis-add-row-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.redis-add-row-input {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--panel-border);
+  color: #fff;
+  padding: 5px 8px;
+  font-size: 0.72rem;
+  border-radius: 4px;
+  outline: none;
+}
+
+.redis-add-row-input:focus {
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.redis-add-row-btn {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #818cf8;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.redis-add-row-btn:hover {
+  background: rgba(99, 102, 241, 0.25);
+  color: #fff;
+}

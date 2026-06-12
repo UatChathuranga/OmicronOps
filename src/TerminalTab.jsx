@@ -58,6 +58,17 @@ export default function TerminalTab({ tab, connections, onStatusChange, onRegist
   const statusRef = useRef('connecting');
   const viewModeRef = useRef('terminal');
 
+  const [visitedViews, setVisitedViews] = useState(new Set([viewMode]));
+
+  useEffect(() => {
+    setVisitedViews(prev => {
+      if (prev.has(viewMode)) return prev;
+      const next = new Set(prev);
+      next.add(viewMode);
+      return next;
+    });
+  }, [viewMode]);
+
   const onStatusChangeRef = useRef(onStatusChange);
   const setStatusRef = useRef(setStatus);
   const setErrorMsgRef = useRef(setErrorMsg);
@@ -1199,13 +1210,20 @@ export default function TerminalTab({ tab, connections, onStatusChange, onRegist
         </div>
       )}
 
-      {viewMode === 'files' && status === 'connected' && (
-        <SftpExplorer tabId={tab.id} />
+      {visitedViews.has('files') && status === 'connected' && (
+        <div style={{ display: viewMode === 'files' ? 'contents' : 'none' }}>
+          <SftpExplorer tabId={tab.id} />
+        </div>
       )}
 
-      {enabledServices.includes(viewMode) && status === 'connected' && (
-        <ServiceClientTab connection={connection} type={viewMode} tabId={tab.id} />
-      )}
+      {enabledServices.map(srv => {
+        if (!visitedViews.has(srv) || status !== 'connected') return null;
+        return (
+          <div key={srv} style={{ display: viewMode === srv ? 'contents' : 'none' }}>
+            <ServiceClientTab connection={connection} type={srv} tabId={tab.id} />
+          </div>
+        );
+      })}
 
       {/* LOCAL SAVE MACRO MODAL */}
       {isSaveMacroOpen && (

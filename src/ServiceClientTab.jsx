@@ -21,7 +21,7 @@ export default function ServiceClientTab({ connection, type, tabId }) {
     case 'mongo':
       return <MongoDbView connection={connection} tabId={tabId} />;
     case 'redis':
-      return <RedisView connection={connection} />;
+      return <RedisView connection={connection} tabId={tabId} />;
     case 'rabbitmq':
       return <RabbitMqView connection={connection} />;
     case 'haproxy':
