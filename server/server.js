@@ -20,7 +20,11 @@ import {
   getAllMacros,
   createMacro,
   updateMacro,
-  deleteMacro
+  deleteMacro,
+  getDecryptedConnections,
+  getAllSavedQueries,
+  createSavedQuery,
+  deleteSavedQuery
 } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -32,6 +36,26 @@ const activeSessions = new Map();
 // Active database queries map: tabId -> { pgClient, tunnel, pid, connection, activeDb }
 const activeQueries = new Map();
 
+// Active RabbitMQ SSH tunnels map: tabId -> { tunnel, port, username, password }
+const activeRmqTunnels = new Map();
+
+// Active HAProxy SSH tunnels map: tabId -> { tunnel, port, username, password }
+const activeHaproxyTunnels = new Map();
+
+export function getCredentialsForPort(port) {
+  for (const info of activeHaproxyTunnels.values()) {
+    if (info.port === Number(port)) {
+      return { username: info.username, password: info.password };
+    }
+  }
+  for (const info of activeRmqTunnels.values()) {
+    if (info.port === Number(port)) {
+      return { username: info.username, password: info.password };
+    }
+  }
+  return null;
+}
+
 const app = express();
 const port = process.env.PORT || 0;
 
@@ -41,6 +65,39 @@ app.use(express.json());
 // Serve static UI assets from dist folder if built
 const distPath = path.join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
+
+// REST API for PostgreSQL Saved Queries
+app.get('/api/db/postgres/queries', (req, res) => {
+  try {
+    const list = getAllSavedQueries();
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/db/postgres/queries', (req, res) => {
+  try {
+    const { name, query } = req.body;
+    if (!name || !query) {
+      return res.status(400).json({ error: 'Name and query are required' });
+    }
+    const newQuery = createSavedQuery({ name, query });
+    res.status(201).json(newQuery);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/db/postgres/queries/:id', (req, res) => {
+  try {
+    const deleted = deleteSavedQuery(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Query not found' });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // REST API for Terminal Macros
 app.get('/api/macros', (req, res) => {
@@ -85,6 +142,15 @@ app.delete('/api/macros/:id', (req, res) => {
 app.get('/api/connections', (req, res) => {
   try {
     const list = getAllConnections(true);
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/connections/export', (req, res) => {
+  try {
+    const list = getDecryptedConnections();
     res.json(list);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -734,18 +800,353 @@ app.post('/api/db/mongo/query', (req, res) => {
 
 // Helper for parsing redis-cli --csv output
 function parseCsvLines(stdout) {
-  const lines = stdout.split('\n');
   const results = [];
-  lines.forEach(line => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-      results.push(trimmed.slice(1, -1).replace(/""/g, '"'));
-    } else if (trimmed) {
-      results.push(trimmed);
+  let currentVal = '';
+  let inQuotes = false;
+  let hasValue = false;
+  let i = 0;
+  
+  while (i < stdout.length) {
+    const char = stdout[i];
+    if (inQuotes) {
+      hasValue = true;
+      if (char === '\\') {
+        const nextChar = stdout[i + 1];
+        if (nextChar === '"') {
+          currentVal += '"';
+          i += 2;
+        } else if (nextChar === '\\') {
+          currentVal += '\\';
+          i += 2;
+        } else if (nextChar === 'n') {
+          currentVal += '\n';
+          i += 2;
+        } else if (nextChar === 'r') {
+          currentVal += '\r';
+          i += 2;
+        } else if (nextChar === 't') {
+          currentVal += '\t';
+          i += 2;
+        } else {
+          currentVal += char;
+          i++;
+        }
+      } else if (char === '"') {
+        const nextChar = stdout[i + 1];
+        if (nextChar === '"') {
+          currentVal += '"';
+          i += 2;
+        } else {
+          inQuotes = false;
+          i++;
+        }
+      } else {
+        currentVal += char;
+        i++;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+        hasValue = true;
+        i++;
+      } else if (char === ',') {
+        results.push(currentVal);
+        currentVal = '';
+        hasValue = false;
+        i++;
+      } else if (char === '\n' || char === '\r') {
+        if (hasValue) {
+          results.push(currentVal);
+          currentVal = '';
+          hasValue = false;
+        }
+        i++;
+      } else if (char === ' ' || char === '\t') {
+        i++;
+      } else {
+        currentVal += char;
+        hasValue = true;
+        i++;
+      }
     }
-  });
+  }
+  if (hasValue) {
+    results.push(currentVal);
+  }
   return results;
 }
+
+// RabbitMQ Endpoints
+app.post('/api/db/rabbitmq/connect', async (req, res) => {
+  const { tabId, connection, port } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  try {
+    const existing = activeRmqTunnels.get(tabId);
+    if (existing) {
+      return res.json({ success: true, port: existing.port });
+    }
+
+    const rmqPortVal = parseInt(port, 10);
+    const managementPort = (!rmqPortVal || rmqPortVal === 5672) ? 15672 : rmqPortVal;
+
+    const tunnel = await createSshTunnel(client, '127.0.0.1', managementPort);
+    const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+    const rmqConfig = dbConnection?.services?.rabbitmq || connection?.services?.rabbitmq || {};
+    activeRmqTunnels.set(tabId, { 
+      tunnel, 
+      port: tunnel.port,
+      username: rmqConfig.username || '',
+      password: rmqConfig.password || ''
+    });
+
+    res.json({ success: true, port: tunnel.port });
+  } catch (err) {
+    console.error('Failed to create RabbitMQ SSH tunnel:', err);
+    res.status(500).json({ error: `Failed to create RabbitMQ SSH tunnel: ${err.message}` });
+  }
+});
+
+app.post('/api/db/rabbitmq/disconnect', async (req, res) => {
+  const { tabId } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+
+  const rmq = activeRmqTunnels.get(tabId);
+  if (rmq) {
+    try {
+      await rmq.tunnel.close();
+    } catch (err) {
+      console.error('Error closing RabbitMQ tunnel:', err);
+    }
+    activeRmqTunnels.delete(tabId);
+  }
+  res.json({ success: true });
+});
+
+function parseHaProxyCsv(csvText) {
+  const lines = csvText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) return { frontends: [], backends: [], servers: [] };
+
+  const headers = lines[0].replace(/^#\s*/, '').split(',');
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const rawValues = lines[i].split(',');
+    const row = {};
+    headers.forEach((h, idx) => {
+      if (h) {
+        row[h] = rawValues[idx] || '';
+      }
+    });
+    rows.push(row);
+  }
+
+  const frontends = [];
+  const backends = [];
+  const servers = [];
+
+  rows.forEach(r => {
+    if (r.svname === 'FRONTEND') {
+      frontends.push({
+        name: r.pxname,
+        scur: parseInt(r.scur, 10) || 0,
+        smax: parseInt(r.smax, 10) || 0,
+        slim: parseInt(r.slim, 10) || 0,
+        stot: parseInt(r.stot, 10) || 0,
+        bin: parseInt(r.bin, 10) || 0,
+        bout: parseInt(r.bout, 10) || 0,
+        ereq: parseInt(r.ereq, 10) || 0,
+        status: r.status
+      });
+    } else if (r.svname === 'BACKEND') {
+      backends.push({
+        name: r.pxname,
+        scur: parseInt(r.scur, 10) || 0,
+        smax: parseInt(r.smax, 10) || 0,
+        slim: parseInt(r.slim, 10) || 0,
+        stot: parseInt(r.stot, 10) || 0,
+        bin: parseInt(r.bin, 10) || 0,
+        bout: parseInt(r.bout, 10) || 0,
+        status: r.status
+      });
+    } else {
+      servers.push({
+        backend: r.pxname,
+        name: r.svname,
+        scur: parseInt(r.scur, 10) || 0,
+        smax: parseInt(r.smax, 10) || 0,
+        stot: parseInt(r.stot, 10) || 0,
+        bin: parseInt(r.bin, 10) || 0,
+        bout: parseInt(r.bout, 10) || 0,
+        status: r.status,
+        weight: parseInt(r.weight, 10) || 0,
+        check_duration: r.check_duration ? r.check_duration + 'ms' : '-',
+        addr: r.addr || '-'
+      });
+    }
+  });
+
+  return { frontends, backends, servers };
+}
+
+// HAProxy Endpoints
+app.post('/api/db/haproxy/connect', async (req, res) => {
+  const { tabId, connection } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  try {
+    const existing = activeHaproxyTunnels.get(tabId);
+    if (existing) {
+      return res.json({ success: true, port: existing.port });
+    }
+
+    const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+    const haproxyConfig = dbConnection?.services?.haproxy || connection?.services?.haproxy || {};
+    const statsUrl = haproxyConfig.statsUrl || 'http://localhost:1936/;csv';
+
+    let host = '127.0.0.1';
+    let port = 1936;
+    try {
+      const parsed = new URL(statsUrl);
+      host = parsed.hostname || '127.0.0.1';
+      port = parsed.port ? parseInt(parsed.port, 10) : 1936;
+    } catch (e) {
+      const match = statsUrl.match(/https?:\/\/([^:/]+)(?::(\d+))?/);
+      if (match) {
+        host = match[1];
+        port = match[2] ? parseInt(match[2], 10) : 1936;
+      }
+    }
+
+    const tunnel = await createSshTunnel(client, host, port);
+    activeHaproxyTunnels.set(tabId, { 
+      tunnel, 
+      port: tunnel.port,
+      username: haproxyConfig.username || '',
+      password: haproxyConfig.password || ''
+    });
+
+    res.json({ success: true, port: tunnel.port });
+  } catch (err) {
+    console.error('Failed to create HAProxy SSH tunnel:', err);
+    res.status(500).json({ error: `Failed to create HAProxy SSH tunnel: ${err.message}` });
+  }
+});
+
+app.post('/api/db/haproxy/disconnect', async (req, res) => {
+  const { tabId } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+
+  const rmq = activeHaproxyTunnels.get(tabId);
+  if (rmq) {
+    try {
+      await rmq.tunnel.close();
+    } catch (err) {
+      console.error('Error closing HAProxy tunnel:', err);
+    }
+    activeHaproxyTunnels.delete(tabId);
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/db/haproxy/stats', async (req, res) => {
+  const { tabId, connection } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const haproxyConfig = dbConnection?.services?.haproxy || connection?.services?.haproxy || {};
+  const statsUrl = haproxyConfig.statsUrl || 'http://localhost:1936/;csv';
+  const username = haproxyConfig.username || '';
+  const password = haproxyConfig.password || '';
+
+  let url = statsUrl;
+  if (!url.includes(';csv')) {
+    if (url.endsWith('/')) {
+      url += ';csv';
+    } else if (url.includes('?')) {
+      url += ';csv';
+    } else {
+      url += ';csv';
+    }
+  }
+
+  let curlCmd = `curl -s -f`;
+  if (username) {
+    curlCmd += ` -u "${username.replace(/"/g, '\\"')}:${password.replace(/"/g, '\\"')}"`;
+  }
+  curlCmd += ` "${url.replace(/"/g, '\\"')}"`;
+
+  client.exec(curlCmd, (err, stream) => {
+    if (err) {
+      return res.status(500).json({ error: `SSH command execution failed: ${err.message}` });
+    }
+
+    let output = '';
+    let stderr = '';
+    stream.on('data', (data) => { output += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', (code) => {
+      if (code !== 0) {
+        return res.status(500).json({ error: `Failed to fetch HAProxy stats (exit code ${code}): ${stderr.trim() || 'Unknown error'}` });
+      }
+
+      try {
+        const parsed = parseHaProxyCsv(output);
+        res.json({ success: true, ...parsed });
+      } catch (parseErr) {
+        res.status(500).json({ error: `Failed to parse HAProxy CSV: ${parseErr.message}` });
+      }
+    });
+  });
+});
+
+app.post('/api/db/haproxy/action', async (req, res) => {
+  const { tabId, connection, serverName, backendName, action } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const haproxyConfig = dbConnection?.services?.haproxy || connection?.services?.haproxy || {};
+  const statsUrl = haproxyConfig.statsUrl || 'http://localhost:1936/;csv';
+  const username = haproxyConfig.username || '';
+  const password = haproxyConfig.password || '';
+
+  let baseUrl = statsUrl.replace(/;csv$/, '').replace(/\?stats;csv$/, '').replace(/&csv$/, '');
+  
+  const actionVal = action === 'ready' ? 'ready' : 'maint';
+  let curlCmd = `curl -s -f -X POST`;
+  if (username) {
+    curlCmd += ` -u "${username.replace(/"/g, '\\"')}:${password.replace(/"/g, '\\"')}"`;
+  }
+  curlCmd += ` -d "s=${encodeURIComponent(serverName)}"`
+          + ` -d "b=${encodeURIComponent(backendName)}"`
+          + ` -d "action=${actionVal}"`
+          + ` "${baseUrl.replace(/"/g, '\\"')}"`;
+
+  client.exec(curlCmd, (err, stream) => {
+    if (err) {
+      return res.status(500).json({ error: `SSH command execution failed: ${err.message}` });
+    }
+
+    let output = '';
+    let stderr = '';
+    stream.on('data', (data) => { output += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', (code) => {
+      if (code !== 0) {
+        return res.status(500).json({ error: `Failed to execute HAProxy admin action (exit code ${code}): ${stderr.trim() || 'Unknown error'}` });
+      }
+      res.json({ success: true });
+    });
+  });
+});
 
 // Redis Endpoints
 app.post('/api/db/redis/info', (req, res) => {
@@ -1025,6 +1426,8 @@ app.post('/api/db/redis/update', (req, res) => {
     subcmd = `ZREM "${key.replace(/"/g, '\\"')}" "${value.replace(/"/g, '\\"')}"`;
   } else if (action === 'delete-key') {
     subcmd = `DEL "${key.replace(/"/g, '\\"')}"`;
+  } else if (action === 'flush-db') {
+    subcmd = `FLUSHDB`;
   } else {
     return res.status(400).json({ error: `Unknown action: ${action}` });
   }
@@ -1336,6 +1739,16 @@ wss.on('connection', (ws) => {
     // Cleanup SSH connection on socket closure
     if (sessionTabId) {
       activeSessions.delete(sessionTabId);
+      const rmq = activeRmqTunnels.get(sessionTabId);
+      if (rmq) {
+        rmq.tunnel.close().catch(() => {});
+        activeRmqTunnels.delete(sessionTabId);
+      }
+      const haproxy = activeHaproxyTunnels.get(sessionTabId);
+      if (haproxy) {
+        haproxy.tunnel.close().catch(() => {});
+        activeHaproxyTunnels.delete(sessionTabId);
+      }
     }
     if (sshStream) {
       sshStream.end();

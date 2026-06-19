@@ -696,6 +696,54 @@ export default function App() {
     }
   };
 
+  const handleExportConnectionsCsv = async () => {
+    try {
+      const res = await fetch('/api/connections/export');
+      if (!res.ok) {
+        throw new Error('Failed to fetch connections for export');
+      }
+      const data = await res.json();
+      if (!data || data.length === 0) {
+        alert('No connections to export.');
+        return;
+      }
+
+      const escapeCSVCell = (val) => {
+        if (val === null || val === undefined) return '';
+        const str = String(val);
+        if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const headers = ['host title', 'ip', 'port', 'username', 'password', 'ssh_key', 'group'];
+      const csvLines = [
+        headers.join(','),
+        ...data.map(conn => [
+          escapeCSVCell(conn.name),
+          escapeCSVCell(conn.host),
+          escapeCSVCell(conn.port),
+          escapeCSVCell(conn.username),
+          escapeCSVCell(conn.password || ''),
+          escapeCSVCell(conn.privateKey || ''),
+          escapeCSVCell(conn.group || '')
+        ].join(','))
+      ];
+
+      const csvContent = csvLines.join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute('download', `connections_export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '_')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      alert(`Export failed: ${err.message}`);
+    }
+  };
+
   const handleOpenImportModal = () => {
     setIsImportModalOpen(true);
     setImportFile(null);
@@ -903,23 +951,6 @@ export default function App() {
             <img src={logo} alt="Logo" className="logo-img" />
             <span>{productName}</span>
           </div>
-          <div className="header-actions">
-            <button className="bulk-import-btn" onClick={() => setIsMacrosModalOpen(true)} title="Manage Terminal Macros">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="16" height="16">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </button>
-            <button className="bulk-import-btn" onClick={handleOpenImportModal} title="Bulk Import CSV">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-            </button>
-            <button className="add-conn-btn" onClick={handleOpenCreateModal} title="Add Connection">
-              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-          </div>
         </div>
 
         <div className="sidebar-search-container">
@@ -1067,7 +1098,29 @@ export default function App() {
             })
           )}
         </div>
-        <div className="sidebar-footer">
+        <div className="sidebar-footer" style={{ flexDirection: 'column', gap: '8px' }}>
+          <div className="footer-actions" style={{ display: 'flex', gap: '8px', width: '100%', justifyContent: 'center' }}>
+            <button className="bulk-import-btn" onClick={() => setIsMacrosModalOpen(true)} title="Manage Terminal Macros">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="16" height="16">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </button>
+            <button className="bulk-import-btn" onClick={handleOpenImportModal} title="Bulk Import CSV">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </button>
+            <button className="bulk-import-btn" onClick={handleExportConnectionsCsv} title="Export Connections as CSV">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-6m0 0l-3 3m3-3l3 3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </button>
+            <button className="add-conn-btn" onClick={handleOpenCreateModal} title="Add Connection">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
           <button className="sidebar-about-btn" onClick={() => setIsAboutModalOpen(true)}>
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

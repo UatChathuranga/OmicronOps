@@ -6,8 +6,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import and start our Express/WebSocket server
+let getCredentialsForPort = null;
 let serverPromise = import('./server/server.js')
-  .then(module => module.serverStarted)
+  .then(module => {
+    getCredentialsForPort = module.getCredentialsForPort;
+    return module.serverStarted;
+  })
   .catch(err => {
     console.error('Failed to start OmicronOps server:', err);
   });
@@ -21,7 +25,8 @@ function createWindow() {
     title: 'OmicronOps',
     webPreferences: {
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      webviewTag: true
     }
   });
 
@@ -48,6 +53,17 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+    }
+  });
+
+  // Handle Basic Authentication events natively inside Electron guest frames/webviews
+  app.on('login', (event, webContents, request, authInfo, callback) => {
+    if (getCredentialsForPort) {
+      const creds = getCredentialsForPort(authInfo.port);
+      if (creds && creds.username) {
+        event.preventDefault();
+        callback(creds.username, creds.password);
+      }
     }
   });
 });

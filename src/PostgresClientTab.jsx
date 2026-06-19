@@ -129,6 +129,119 @@ export function PostgreSqlView({ connection, tabId }) {
     activeTabIdRef.current = activeTabId;
   }, [activeTabId]);
 
+  // Saved queries states
+  const [savedQueries, setSavedQueries] = useState([]);
+  const [savedQueriesCollapsed, setSavedQueriesCollapsed] = useState(false);
+  const [saveQueryModalOpen, setSaveQueryModalOpen] = useState(false);
+  const [newSavedQueryName, setNewSavedQueryName] = useState('');
+  const [saveQueryError, setSaveQueryError] = useState(null);
+
+  // Fetch saved queries on mount
+  useEffect(() => {
+    fetchSavedQueries();
+  }, []);
+
+  const fetchSavedQueries = () => {
+    fetch('/api/db/postgres/queries')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSavedQueries(data);
+        }
+      })
+      .catch(err => console.error('Error fetching saved queries:', err));
+  };
+
+  const handleSaveQuery = (name, query) => {
+    fetch('/api/db/postgres/queries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, query })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to save query');
+        return res.json();
+      })
+      .then(newQuery => {
+        setSavedQueries(prev => [newQuery, ...prev]);
+        setSaveQueryModalOpen(false);
+        setNewSavedQueryName('');
+        setSaveQueryError(null);
+      })
+      .catch(err => {
+        setSaveQueryError(err.message);
+      });
+  };
+
+  const handleDeleteSavedQuery = (id, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this saved query?')) return;
+    
+    fetch(`/api/db/postgres/queries/${id}`, {
+      method: 'DELETE'
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to delete query');
+        setSavedQueries(prev => prev.filter(q => q.id !== id));
+      })
+      .catch(err => console.error('Error deleting query:', err));
+  };
+
+  const loadSavedQuery = (q) => {
+    // If active tab is a query tab, load query text into it
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    if (activeTab && activeTab.type === 'query') {
+      setQueryText(q.query);
+      // Also update in tabs list
+      setTabsList(prev => prev.map(t => {
+        if (t.id === activeTabId) {
+          return { ...t, queryText: q.query, title: q.name };
+        }
+        return t;
+      }));
+    } else {
+      // Otherwise, open a new query tab with the query text and name
+      const tabKey = `query-tab-${Date.now()}`;
+      const newTab = {
+        id: tabKey,
+        type: 'query',
+        title: q.name,
+        selectedItem: { type: 'query', name: '' },
+        queryText: q.query,
+        queryResults: null,
+        currentPage: 1,
+        pageSize: 10,
+        pendingEdits: [],
+        newRow: null,
+        selectedRows: new Set(),
+        editingCell: null,
+        editingValue: '',
+        saveError: null,
+        saveSuccess: null,
+        newRowError: null,
+        deleteError: null
+      };
+
+      setTabsList(prev => [...prev, newTab]);
+      setActiveTabId(tabKey);
+
+      setSelectedItem({ type: 'query', name: '' });
+      setQueryText(q.query);
+      setQueryResults(null);
+      setCurrentPage(1);
+      setPageSize(10);
+      setPendingEdits([]);
+      setNewRow(null);
+      setSelectedRows(new Set());
+      setEditingCell(null);
+      setEditingValue('');
+      setSaveError(null);
+      setSaveSuccess(null);
+      setNewRowError(null);
+      setDeleteError(null);
+    }
+  };
+
   // Sync active states back to the tabs list in real-time
   useEffect(() => {
     if (!activeTabId) return;
@@ -1279,6 +1392,45 @@ export function PostgreSqlView({ connection, tabId }) {
               ))}
             </div>
           )}
+
+          {/* Saved Queries Collapsible Section */}
+          <div className="db-sidebar-section-header" onClick={() => setSavedQueriesCollapsed(!savedQueriesCollapsed)} style={{ marginTop: '12px' }}>
+            <span>Saved Queries ({savedQueries.length})</span>
+            <span style={{ fontSize: '0.6rem' }}>{savedQueriesCollapsed ? '▶' : '▼'}</span>
+          </div>
+          {!savedQueriesCollapsed && (
+            <div className="db-sidebar-list-inner" style={{ paddingLeft: '4px', marginTop: '4px' }}>
+              {savedQueries.map(q => (
+                <div key={q.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
+                  <button
+                    className="db-list-item"
+                    onClick={() => loadSavedQuery(q)}
+                    style={{ flex: 1, border: 'none', background: 'transparent', textAlign: 'left', paddingRight: '24px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}
+                    title={`Click to load:\n\n${q.query}`}
+                  >
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                    </svg>
+                    <span>{q.name}</span>
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteSavedQuery(q.id, e)}
+                    title="Delete saved query"
+                    style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                    onMouseLeave={e => e.currentTarget.style.opacity = 0.6}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {savedQueries.length === 0 && (
+                <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  No saved queries
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="pg-config-info" style={{ padding: '12px', borderTop: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.1)' }}>
@@ -1475,6 +1627,23 @@ export function PostgreSqlView({ connection, tabId }) {
               </svg>
               Execute Query
             </button>
+            {tabs.find(t => t.id === activeTabId)?.type === 'query' && (
+              <button 
+                className="save-query-btn" 
+                onClick={() => {
+                  setNewSavedQueryName('');
+                  setSaveQueryError(null);
+                  setSaveQueryModalOpen(true);
+                }}
+                disabled={queryResults?.loading || !queryText.trim()}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.07)', border: '1px solid var(--panel-border)', color: '#fff', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: (queryResults?.loading || !queryText.trim()) ? 'not-allowed' : 'pointer', fontWeight: '600' }}
+              >
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+                  <path d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+                </svg>
+                Save Query
+              </button>
+            )}
           </div>
           <div className="sql-editor-container" style={{ flexGrow: 1, position: 'relative' }}>
             <textarea
@@ -1995,6 +2164,58 @@ export function PostgreSqlView({ connection, tabId }) {
               Cancel
             </button>
           )}
+        </div>
+      )}
+
+      {/* Save Query Modal */}
+      {saveQueryModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div className="glass-panel" style={{ background: '#1a1d27', border: '1px solid var(--panel-border)', borderRadius: '8px', width: '100%', maxWidth: '460px', padding: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.6)' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#fff', marginBottom: '14px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>
+              Save Query
+            </div>
+            
+            {saveQueryError && (
+              <div style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '4px', marginBottom: '12px' }}>
+                {saveQueryError}
+              </div>
+            )}
+            
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Query Name</label>
+              <input
+                type="text"
+                placeholder="e.g. Fetch Active Users"
+                value={newSavedQueryName}
+                onChange={e => setNewSavedQueryName(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', outline: 'none', boxSizing: 'border-box' }}
+                autoFocus
+              />
+            </div>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px' }}>SQL Statement</label>
+              <pre style={{ margin: 0, padding: '8px 12px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--panel-border)', borderRadius: '4px', color: '#a7f3d0', fontSize: '0.7rem', overflow: 'auto', maxHeight: '120px', fontFamily: 'monospace' }}>
+                {queryText}
+              </pre>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                onClick={() => setSaveQueryModalOpen(false)}
+                style={{ background: 'none', border: '1px solid var(--panel-border)', color: 'var(--text-muted)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveQuery(newSavedQueryName, queryText)}
+                disabled={!newSavedQueryName.trim()}
+                style={{ background: 'var(--accent-primary)', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: !newSavedQueryName.trim() ? 'not-allowed' : 'pointer', fontWeight: '600' }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

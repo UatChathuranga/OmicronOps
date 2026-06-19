@@ -1,6 +1,1 @@
-macro for ssh
-redis client
-pg client
-mongo client
-rabbitmq client
-haproxy client
+save queries in pg

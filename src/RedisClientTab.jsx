@@ -469,6 +469,7 @@ export function RedisView({ connection, tabId }) {
       setNewKeyData({ name: '', type: 'string', value: '', ttl: '-1' });
       setSelectedDb(activeDb);
       setSelectedKey(name);
+      fetchKeyValue(activeDb, name, type);
     }
   };
 
@@ -802,6 +803,36 @@ export function RedisView({ connection, tabId }) {
                   </svg>
                   <span className="db-name" style={{ fontSize: '0.78rem', fontWeight: isDbActive ? '600' : 'normal', color: isDbActive ? '#fff' : 'var(--text-secondary)', flexGrow: 1 }}>{dbName.toUpperCase()}</span>
                   <span className="db-count-badge" style={{ fontSize: '0.65rem', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '10px', color: 'var(--text-muted)' }}>{keyCount}</span>
+                  <div className="redis-db-actions" onClick={e => e.stopPropagation()}>
+                    <button 
+                      className="redis-db-action-btn refresh" 
+                      title="Refresh keys"
+                      onClick={() => {
+                        fetchDbKeys(dbName, dbFilters[dbName] || '');
+                        fetchKeyspaceInfo();
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l.73-.73" />
+                      </svg>
+                    </button>
+                    <button 
+                      className="redis-db-action-btn flush" 
+                      title="Flush database"
+                      onClick={async () => {
+                        if (window.confirm(`Are you sure you want to flush all keys from ${dbName.toUpperCase()}?`)) {
+                          await executeRedisUpdate(dbName, 'flush-db', null);
+                        }
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        <line x1="10" y1="11" x2="10" y2="17" />
+                        <line x1="14" y1="11" x2="14" y2="17" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
 
                 {isDbExpanded && (

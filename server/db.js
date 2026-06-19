@@ -16,6 +16,7 @@ const DATA_DIR = xdgConfig
 const DB_FILE = path.join(DATA_DIR, 'connections.json');
 const KEY_FILE = path.join(DATA_DIR, 'secret.key');
 const MACROS_FILE = path.join(DATA_DIR, 'macros.json');
+const SAVED_QUERIES_FILE = path.join(DATA_DIR, 'saved_queries.json');
 
 // Ensure new configuration directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -492,4 +493,73 @@ export function deleteMacro(id) {
   writeMacros(filtered);
   return true;
 }
+
+function readSavedQueries() {
+  if (!fs.existsSync(SAVED_QUERIES_FILE)) {
+    fs.writeFileSync(SAVED_QUERIES_FILE, JSON.stringify([], null, 2));
+    return [];
+  }
+  try {
+    const data = fs.readFileSync(SAVED_QUERIES_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error reading saved queries file:', error);
+    return [];
+  }
+}
+
+function writeSavedQueries(data) {
+  try {
+    fs.writeFileSync(SAVED_QUERIES_FILE, JSON.stringify(data, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Error writing saved queries file:', error);
+    return false;
+  }
+}
+
+export function getAllSavedQueries() {
+  const queries = readSavedQueries();
+  return queries.sort((a, b) => new Date(b.created) - new Date(a.created));
+}
+
+export function createSavedQuery(queryData) {
+  const queries = readSavedQueries();
+  const newQuery = {
+    id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+    name: queryData.name || 'Unnamed Query',
+    query: queryData.query || '',
+    created: new Date().toISOString()
+  };
+  queries.push(newQuery);
+  writeSavedQueries(queries);
+  return newQuery;
+}
+
+export function deleteSavedQuery(id) {
+  const queries = readSavedQueries();
+  const filtered = queries.filter(q => q.id !== id);
+  if (filtered.length === queries.length) return false;
+  writeSavedQueries(filtered);
+  return true;
+}
+
+export function getDecryptedConnections() {
+  const connections = readDB();
+  return connections.map(conn => {
+    const result = { ...conn };
+    if (result.password) result.password = decrypt(result.password);
+    if (result.privateKey) result.privateKey = decrypt(result.privateKey);
+    if (result.services) {
+      result.services = JSON.parse(JSON.stringify(result.services));
+      Object.keys(result.services).forEach(srv => {
+        if (result.services[srv] && result.services[srv].password) {
+          result.services[srv].password = decrypt(result.services[srv].password);
+        }
+      });
+    }
+    return result;
+  });
+}
+
 

@@ -2374,7 +2374,7 @@ body.resizing-row {
   padding: 6px 16px;
   font-family: var(--font-sans);
   font-size: 0.72rem;
-  color: var(--text-secondary);
+  color: #fff;
   flex-shrink: 0;
   user-select: none;
   backdrop-filter: blur(10px);
@@ -2391,7 +2391,7 @@ body.resizing-row {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: var(--text-muted);
+  color: #fff;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.65rem;
@@ -2403,7 +2403,7 @@ body.resizing-row {
 }
 
 .metric-val {
-  color: var(--text-primary);
+  color: #fff;
   font-family: var(--font-mono);
   font-weight: 600;
 }
@@ -2450,11 +2450,11 @@ body.resizing-row {
 }
 
 .net-speed.down {
-  color: #10b981; /* Green */
+  color: #fff; /* White */
 }
 
 .net-speed.up {
-  color: #3b82f6; /* Blue */
+  color: #fff; /* White */
 }
 
 .net-speed svg {
@@ -2462,7 +2462,7 @@ body.resizing-row {
 }
 
 .load-metric .metric-val {
-  color: #f59e0b; /* Amber */
+  color: #fff; /* White */
 }
 
 /* Compact headers and small layouts inside split grid cells */
@@ -2838,6 +2838,67 @@ body.resizing-row {
 .haproxy-control-btn:hover {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
+  color: #000;
+}
+
+.haproxy-status-badge.down {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* HAProxy Layout Styles */
+.haproxy-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.haproxy-subtab-headers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.haproxy-tab-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.haproxy-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.haproxy-tab-btn.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #000;
+}
+
+.haproxy-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.haproxy-main-panel {
+  margin-bottom: 20px;
 }
 
 /* ==========================================================================
@@ -3132,6 +3193,43 @@ body.resizing-row {
   padding: 1px 6px;
   border-radius: 10px;
   font-weight: 500;
+}
+
+.redis-db-header:hover .db-count-badge {
+  display: none;
+}
+
+.redis-db-actions {
+  display: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.redis-db-header:hover .redis-db-actions {
+  display: flex;
+}
+
+.redis-db-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.redis-db-action-btn.refresh:hover {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.15);
+}
+
+.redis-db-action-btn.flush:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
 }
 
 .redis-db-keys-tree {

@@ -23,9 +23,9 @@ export default function ServiceClientTab({ connection, type, tabId }) {
     case 'redis':
       return <RedisView connection={connection} tabId={tabId} />;
     case 'rabbitmq':
-      return <RabbitMqView connection={connection} />;
+      return <RabbitMqView connection={connection} tabId={tabId} />;
     case 'haproxy':
-      return <HaProxyView connection={connection} />;
+      return <HaProxyView connection={connection} tabId={tabId} />;
     default:
       return (
         <div style={{ padding: '20px', color: 'var(--text-secondary)' }}>
