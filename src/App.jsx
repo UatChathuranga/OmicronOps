@@ -81,7 +81,7 @@ export default function App() {
   const [isMacrosModalOpen, setIsMacrosModalOpen] = useState(false);
   const [isMacroFormOpen, setIsMacroFormOpen] = useState(false);
   const [macroFormMode, setMacroFormMode] = useState('create'); // 'create' or 'edit'
-  const [macroFormData, setMacroFormData] = useState({ id: null, name: '', command: '', delay: 1, delays: null, stepMode: false });
+  const [macroFormData, setMacroFormData] = useState({ id: null, name: '', command: '', delay: 0, delays: null, stepMode: false });
 
   // Group inline renaming state
   const [editingGroupName, setEditingGroupName] = useState(null);
@@ -96,6 +96,7 @@ export default function App() {
     authMethod: 'password',
     password: '',
     privateKey: '',
+    passphrase: '',
     group: 'Default',
     services: {
       postgres: { enabled: false, port: '5432', database: '', username: 'postgres', password: '' },
@@ -113,7 +114,8 @@ export default function App() {
     username: 'root',
     authMethod: 'password',
     password: '',
-    privateKey: ''
+    privateKey: '',
+    passphrase: ''
   });
 
   // Fetch connections on load
@@ -262,6 +264,7 @@ export default function App() {
       authMethod: 'password',
       password: '',
       privateKey: '',
+      passphrase: '',
       group: 'Default',
       services: {
         postgres: { enabled: false, port: '5432', database: '', username: 'postgres', password: '' },
@@ -288,6 +291,7 @@ export default function App() {
       authMethod: conn.authMethod,
       password: conn.password || '',
       privateKey: conn.privateKey || '',
+      passphrase: conn.passphrase || '',
       group: conn.group || 'Default',
       services: {
         postgres: {
@@ -329,6 +333,13 @@ export default function App() {
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
+    if (formData.authMethod === 'key' && formData.privateKey && formData.privateKey !== '********') {
+      const trimmed = formData.privateKey.trim();
+      if (trimmed.startsWith('ssh-rsa') || trimmed.startsWith('ssh-dss') || trimmed.startsWith('ssh-ed25519') || trimmed.startsWith('ecdsa-')) {
+        alert("Validation Error: You entered a Public Key (e.g., starting with 'ssh-rsa') in the Private Key Content field. Please use the Private Key file content instead (which typically begins with '-----BEGIN ... PRIVATE KEY-----').");
+        return;
+      }
+    }
     try {
       const url = modalMode === 'create' ? '/api/connections' : `/api/connections/${editingId}`;
       const method = modalMode === 'create' ? 'POST' : 'PUT';
@@ -373,11 +384,7 @@ export default function App() {
       alert("Macro Name and Command are required.");
       return;
     }
-    const delayVal = parseFloat(macroFormData.delay);
-    if (isNaN(delayVal) || delayVal < 0) {
-      alert("Delay must be a non-negative number.");
-      return;
-    }
+    const delayVal = parseFloat(macroFormData.delay) || 0;
     try {
       const url = macroFormMode === 'create' ? '/api/macros' : `/api/macros/${macroFormData.id}`;
       const method = macroFormMode === 'create' ? 'POST' : 'PUT';
@@ -394,7 +401,7 @@ export default function App() {
       });
       if (res.ok) {
         setIsMacroFormOpen(false);
-        setMacroFormData({ id: null, name: '', command: '', delay: 1, delays: null, stepMode: false });
+        setMacroFormData({ id: null, name: '', command: '', delay: 0, delays: null, stepMode: false });
         fetchMacros();
       } else {
         const err = await res.json();
@@ -464,6 +471,13 @@ export default function App() {
       alert('Host and Username are required.');
       return;
     }
+    if (quickConnectData.authMethod === 'key') {
+      const trimmed = (quickConnectData.privateKey || '').trim();
+      if (trimmed.startsWith('ssh-rsa') || trimmed.startsWith('ssh-dss') || trimmed.startsWith('ssh-ed25519') || trimmed.startsWith('ecdsa-')) {
+        alert("Validation Error: You entered a Public Key (e.g., starting with 'ssh-rsa') in the Private Key Content field. Please use the Private Key file content instead (which typically begins with '-----BEGIN ... PRIVATE KEY-----').");
+        return;
+      }
+    }
 
     const newTabId = `tab-${Date.now()}`;
     const title = `${quickConnectData.username}@${quickConnectData.host}:${quickConnectData.port}`;
@@ -483,7 +497,8 @@ export default function App() {
       ...quickConnectData,
       host: '',
       password: '',
-      privateKey: ''
+      privateKey: '',
+      passphrase: ''
     });
   };
 
@@ -717,7 +732,7 @@ export default function App() {
         return str;
       };
 
-      const headers = ['host title', 'ip', 'port', 'username', 'password', 'ssh_key', 'group'];
+      const headers = ['host title', 'ip', 'port', 'username', 'password', 'ssh_key', 'ssh_key_passphrase', 'group'];
       const csvLines = [
         headers.join(','),
         ...data.map(conn => [
@@ -727,6 +742,7 @@ export default function App() {
           escapeCSVCell(conn.username),
           escapeCSVCell(conn.password || ''),
           escapeCSVCell(conn.privateKey || ''),
+          escapeCSVCell(conn.passphrase || ''),
           escapeCSVCell(conn.group || '')
         ].join(','))
       ];
@@ -815,6 +831,7 @@ export default function App() {
       let usernameIdx = -1;
       let passwordIdx = -1;
       let sshKeyIdx = -1;
+      let sshKeyPassphraseIdx = -1;
       let groupIdx = -1;
 
       const firstLine = rows[0] || [];
@@ -832,6 +849,7 @@ export default function App() {
         usernameIdx = headers.indexOf('username');
         passwordIdx = headers.indexOf('password');
         sshKeyIdx = headers.indexOf('ssh key');
+        sshKeyPassphraseIdx = headers.indexOf('ssh key passphrase');
         groupIdx = headers.indexOf('group');
         dataRows = rows.slice(1);
       } else {
@@ -841,7 +859,8 @@ export default function App() {
         usernameIdx = 3;
         passwordIdx = 4;
         sshKeyIdx = 5;
-        groupIdx = 6;
+        sshKeyPassphraseIdx = 6;
+        groupIdx = 7;
       }
 
       const parsedConnections = [];
@@ -857,6 +876,7 @@ export default function App() {
         const username = row[usernameIdx] || 'root';
         const password = row[passwordIdx] || '';
         const ssh_key = row[sshKeyIdx] || '';
+        const passphrase = (sshKeyPassphraseIdx !== -1 && sshKeyPassphraseIdx < row.length ? row[sshKeyPassphraseIdx] : '') || '';
         const authMethod = ssh_key ? 'key' : 'password';
         const group = (groupIdx !== -1 && groupIdx < row.length ? row[groupIdx] : '') || '';
 
@@ -868,6 +888,7 @@ export default function App() {
           authMethod,
           password,
           privateKey: ssh_key,
+          passphrase,
           group: group.trim()
         });
       }
@@ -1267,16 +1288,28 @@ export default function App() {
                             />
                           </div>
                         ) : (
-                          <div className="form-group">
-                            <label className="form-label">Private Key Content</label>
-                            <textarea
-                              className="form-textarea"
-                              rows={4}
-                              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                              value={quickConnectData.privateKey}
-                              onChange={(e) => setQuickConnectData({ ...quickConnectData, privateKey: e.target.value })}
-                            />
-                          </div>
+                          <>
+                            <div className="form-group">
+                              <label className="form-label">Private Key Content</label>
+                              <textarea
+                                className="form-textarea"
+                                rows={4}
+                                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                                value={quickConnectData.privateKey}
+                                onChange={(e) => setQuickConnectData({ ...quickConnectData, privateKey: e.target.value })}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">Private Key Passphrase (Optional)</label>
+                              <input
+                                type="password"
+                                className="form-input"
+                                placeholder="Passphrase (leave empty if none)"
+                                value={quickConnectData.passphrase}
+                                onChange={(e) => setQuickConnectData({ ...quickConnectData, passphrase: e.target.value })}
+                              />
+                            </div>
+                          </>
                         )}
 
                         <button type="submit" className="connect-submit-btn">
@@ -1514,17 +1547,29 @@ export default function App() {
                       />
                     </div>
                   ) : (
-                    <div className="form-group">
-                      <label className="form-label">Private Key Content</label>
-                      <textarea
-                        className="form-textarea"
-                        rows={4}
-                        placeholder={modalMode === 'edit' ? 'Keep existing key (********)' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
-                        required={modalMode === 'create'}
-                        value={formData.privateKey}
-                        onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
-                      />
-                    </div>
+                    <>
+                      <div className="form-group" style={{ marginBottom: '14px' }}>
+                        <label className="form-label">Private Key Content</label>
+                        <textarea
+                          className="form-textarea"
+                          rows={4}
+                          placeholder={modalMode === 'edit' ? 'Keep existing key (********)' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
+                          required={modalMode === 'create'}
+                          value={formData.privateKey}
+                          onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Private Key Passphrase (Optional)</label>
+                        <input
+                          type="password"
+                          className="form-input"
+                          placeholder={modalMode === 'edit' ? 'Keep existing passphrase (********)' : 'Passphrase (leave empty if none)'}
+                          value={formData.passphrase}
+                          onChange={(e) => setFormData({ ...formData, passphrase: e.target.value })}
+                        />
+                      </div>
+                    </>
                   )}
                 </>
               ) : (
@@ -2171,46 +2216,17 @@ export default function App() {
                   />
                 </div>
                 <div style={{ marginBottom: '14px' }}>
-                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span>Execution Mode</span>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={macroFormData.stepMode || false}
+                      onChange={(e) => setMacroFormData({ ...macroFormData, stepMode: e.target.checked })}
+                      style={{ accentColor: 'var(--accent-primary)', cursor: 'pointer', width: '16px', height: '16px' }}
+                    />
+                    <span style={{ fontWeight: '600' }}>⏸ Step Mode</span>
                   </label>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setMacroFormData({ ...macroFormData, stepMode: false })}
-                      style={{
-                        flex: 1,
-                        padding: '8px 12px',
-                        borderRadius: '6px',
-                        border: `1px solid ${!macroFormData.stepMode ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)'}`,
-                        background: !macroFormData.stepMode ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.03)',
-                        color: !macroFormData.stepMode ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        textAlign: 'left'
-                      }}
-                    >
-                      <div style={{ fontWeight: '600', marginBottom: '2px' }}>⏱ Auto Delay</div>
-                      <div style={{ fontSize: '11px', opacity: 0.8 }}>Wait a fixed number of seconds between commands</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMacroFormData({ ...macroFormData, stepMode: true })}
-                      style={{
-                        flex: 1,
-                        padding: '8px 12px',
-                        borderRadius: '6px',
-                        border: `1px solid ${macroFormData.stepMode ? '#f59e0b' : 'rgba(255,255,255,0.1)'}`,
-                        background: macroFormData.stepMode ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.03)',
-                        color: macroFormData.stepMode ? '#f59e0b' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        textAlign: 'left'
-                      }}
-                    >
-                      <div style={{ fontWeight: '600', marginBottom: '2px' }}>⏸ Step Mode</div>
-                      <div style={{ fontSize: '11px', opacity: 0.8 }}>Pause after each command — you click Next to continue</div>
-                    </button>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginLeft: '24px', marginTop: '2px' }}>
+                    Pause after each command — you click Next to continue
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
@@ -2219,7 +2235,7 @@ export default function App() {
                     className="btn-secondary" 
                     onClick={() => {
                       setIsMacroFormOpen(false);
-                      setMacroFormData({ id: null, name: '', command: '', delay: 1, stepMode: false });
+                      setMacroFormData({ id: null, name: '', command: '', delay: 0, delays: null, stepMode: false });
                     }}
                   >
                     Cancel
@@ -2237,7 +2253,7 @@ export default function App() {
                   style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}
                   onClick={() => {
                     setMacroFormMode('create');
-                    setMacroFormData({ id: null, name: '', command: '' });
+                    setMacroFormData({ id: null, name: '', command: '', delay: 0, delays: null, stepMode: false });
                     setIsMacroFormOpen(true);
                   }}
                 >
@@ -2282,7 +2298,7 @@ export default function App() {
                             ) : m.delays && m.delays.length > 0 ? (
                               <span style={{ color: '#10b981' }}>⏱ recorded timing</span>
                             ) : (
-                              <span>{m.delay ?? 1}s delay</span>
+                              <span>sequential</span>
                             )}
                           </span>
                         </div>
@@ -2318,7 +2334,7 @@ export default function App() {
                             title="Edit Macro"
                             onClick={() => {
                               setMacroFormMode('edit');
-                              setMacroFormData({ id: m.id, name: m.name, command: m.command, delay: m.delay ?? 1, delays: m.delays ?? null, stepMode: m.stepMode ?? false });
+                              setMacroFormData({ id: m.id, name: m.name, command: m.command, delay: m.delay ?? 0, delays: m.delays ?? null, stepMode: m.stepMode ?? false });
                               setIsMacroFormOpen(true);
                             }}
                           >

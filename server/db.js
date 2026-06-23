@@ -144,6 +144,7 @@ export function getAllConnections(maskCredentials = true) {
     if (maskCredentials) {
       if (masked.password) masked.password = '********';
       if (masked.privateKey) masked.privateKey = '********';
+      if (masked.passphrase) masked.passphrase = '********';
       if (masked.services) {
         masked.services = JSON.parse(JSON.stringify(masked.services));
         Object.keys(masked.services).forEach(srv => {
@@ -182,6 +183,9 @@ export function getConnectionById(id, decryptCredentials = false) {
   if (decryptCredentials) {
     if (result.password) result.password = decrypt(result.password);
     if (result.privateKey) result.privateKey = decrypt(result.privateKey);
+    if (result.passphrase) result.passphrase = decrypt(result.passphrase);
+  } else {
+    if (result.passphrase) result.passphrase = '********';
   }
   return result;
 }
@@ -235,8 +239,13 @@ export function createConnection(connData) {
 
   if (newConn.authMethod === 'password' && connData.password) {
     newConn.password = encrypt(connData.password);
-  } else if (newConn.authMethod === 'key' && connData.privateKey) {
-    newConn.privateKey = encrypt(connData.privateKey);
+  } else if (newConn.authMethod === 'key') {
+    if (connData.privateKey) {
+      newConn.privateKey = encrypt(connData.privateKey);
+    }
+    if (connData.passphrase) {
+      newConn.passphrase = encrypt(connData.passphrase);
+    }
   }
 
   connections.push(newConn);
@@ -305,8 +314,13 @@ export function bulkCreateConnections(connectionsList, groupName) {
 
     if (newConn.authMethod === 'password' && connData.password) {
       newConn.password = encrypt(connData.password);
-    } else if (newConn.authMethod === 'key' && connData.privateKey) {
-      newConn.privateKey = encrypt(connData.privateKey);
+    } else if (newConn.authMethod === 'key') {
+      if (connData.privateKey) {
+        newConn.privateKey = encrypt(connData.privateKey);
+      }
+      if (connData.passphrase) {
+        newConn.passphrase = encrypt(connData.passphrase);
+      }
     }
 
     connections.push(newConn);
@@ -371,11 +385,19 @@ export function updateConnection(id, connUpdate) {
     if (connUpdate.password && connUpdate.password !== '********') {
       existing.password = encrypt(connUpdate.password);
       existing.privateKey = ''; // Clear key if switching auth
+      existing.passphrase = ''; // Clear passphrase
     }
   } else if (existing.authMethod === 'key') {
     if (connUpdate.privateKey && connUpdate.privateKey !== '********') {
       existing.privateKey = encrypt(connUpdate.privateKey);
       existing.password = ''; // Clear password if switching auth
+    }
+    if (connUpdate.passphrase !== undefined) {
+      if (connUpdate.passphrase === '') {
+        existing.passphrase = '';
+      } else if (connUpdate.passphrase !== '********') {
+        existing.passphrase = encrypt(connUpdate.passphrase);
+      }
     }
   }
 
@@ -550,6 +572,7 @@ export function getDecryptedConnections() {
     const result = { ...conn };
     if (result.password) result.password = decrypt(result.password);
     if (result.privateKey) result.privateKey = decrypt(result.privateKey);
+    if (result.passphrase) result.passphrase = decrypt(result.passphrase);
     if (result.services) {
       result.services = JSON.parse(JSON.stringify(result.services));
       Object.keys(result.services).forEach(srv => {
@@ -561,5 +584,58 @@ export function getDecryptedConnections() {
     return result;
   });
 }
+
+const SAVED_MONGO_QUERIES_FILE = path.join(DATA_DIR, 'saved_mongo_queries.json');
+
+function readSavedMongoQueries() {
+  if (!fs.existsSync(SAVED_MONGO_QUERIES_FILE)) {
+    fs.writeFileSync(SAVED_MONGO_QUERIES_FILE, JSON.stringify([], null, 2));
+    return [];
+  }
+  try {
+    const data = fs.readFileSync(SAVED_MONGO_QUERIES_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error reading saved MongoDB queries file:', error);
+    return [];
+  }
+}
+
+function writeSavedMongoQueries(data) {
+  try {
+    fs.writeFileSync(SAVED_MONGO_QUERIES_FILE, JSON.stringify(data, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Error writing saved MongoDB queries file:', error);
+    return false;
+  }
+}
+
+export function getAllSavedMongoQueries() {
+  const queries = readSavedMongoQueries();
+  return queries.sort((a, b) => new Date(b.created) - new Date(a.created));
+}
+
+export function createSavedMongoQuery(queryData) {
+  const queries = readSavedMongoQueries();
+  const newQuery = {
+    id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+    name: queryData.name || 'Unnamed Query',
+    query: queryData.query || '',
+    created: new Date().toISOString()
+  };
+  queries.push(newQuery);
+  writeSavedMongoQueries(queries);
+  return newQuery;
+}
+
+export function deleteSavedMongoQuery(id) {
+  const queries = readSavedMongoQueries();
+  const filtered = queries.filter(q => q.id !== id);
+  if (filtered.length === queries.length) return false;
+  writeSavedMongoQueries(filtered);
+  return true;
+}
+
 
 

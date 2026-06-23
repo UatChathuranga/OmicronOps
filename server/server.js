@@ -8,6 +8,16 @@ import { Client as SSHClient } from 'ssh2';
 import pg from 'pg';
 import net from 'net';
 import fs from 'fs';
+
+let MongoClient;
+let ObjectId;
+try {
+  const mongodb = await import('mongodb');
+  MongoClient = mongodb.MongoClient;
+  ObjectId = mongodb.ObjectId;
+} catch (e) {
+  console.warn('MongoDB Node.js driver not available, falling back to SSH Exec CLI clients.');
+}
 import {
   getAllConnections,
   getConnectionById,
@@ -24,7 +34,10 @@ import {
   getDecryptedConnections,
   getAllSavedQueries,
   createSavedQuery,
-  deleteSavedQuery
+  deleteSavedQuery,
+  getAllSavedMongoQueries,
+  createSavedMongoQuery,
+  deleteSavedMongoQuery
 } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -169,6 +182,13 @@ app.get('/api/connections/:id', (req, res) => {
 
 app.post('/api/connections', (req, res) => {
   try {
+    const { authMethod, privateKey } = req.body;
+    if (authMethod === 'key' && privateKey) {
+      const trimmed = privateKey.trim();
+      if (trimmed.startsWith('ssh-rsa') || trimmed.startsWith('ssh-dss') || trimmed.startsWith('ssh-ed25519') || trimmed.startsWith('ecdsa-')) {
+        return res.status(400).json({ error: 'You provided a Public Key (.pub) instead of a Private Key. Please provide the private key starting with "-----BEGIN ... PRIVATE KEY-----".' });
+      }
+    }
     const newConn = createConnection(req.body);
     res.status(201).json(newConn);
   } catch (error) {
@@ -191,6 +211,13 @@ app.post('/api/connections/bulk', (req, res) => {
 
 app.put('/api/connections/:id', (req, res) => {
   try {
+    const { authMethod, privateKey } = req.body;
+    if (authMethod === 'key' && privateKey && privateKey !== '********') {
+      const trimmed = privateKey.trim();
+      if (trimmed.startsWith('ssh-rsa') || trimmed.startsWith('ssh-dss') || trimmed.startsWith('ssh-ed25519') || trimmed.startsWith('ecdsa-')) {
+        return res.status(400).json({ error: 'You provided a Public Key (.pub) instead of a Private Key. Please provide the private key starting with "-----BEGIN ... PRIVATE KEY-----".' });
+      }
+    }
     const updated = updateConnection(req.params.id, req.body);
     if (!updated) return res.status(404).json({ error: 'Connection not found' });
     res.json(updated);
@@ -734,9 +761,59 @@ app.post('/api/db/postgres/delete-row', async (req, res) => {
     if (tunnel) { try { await tunnel.close(); } catch (e) { console.error(e); } }
   }
 });
+// Helper to recursively flatten MongoDB Extended JSON types ($oid, $date, etc.) to standard JS types
+function flattenBson(val) {
+  if (val === null || val === undefined) return val;
+  if (Array.isArray(val)) {
+    return val.map(flattenBson);
+  }
+  if (val instanceof Uint8Array || Buffer.isBuffer(val)) {
+    if (val.length === 12) {
+      return Buffer.from(val).toString('hex');
+    }
+  }
+  if (typeof val === 'object') {
+    // Check if it is a native ObjectId object
+    if (val._bsontype === 'ObjectId' || (val.constructor && val.constructor.name === 'ObjectID') || (val.constructor && val.constructor.name === 'ObjectId')) {
+      return typeof val.toHexString === 'function' ? val.toHexString() : val.toString();
+    }
+    // Check if the object itself has a 12-byte buffer property (like serialized ObjectId)
+    if (val.buffer && typeof val.buffer === 'object') {
+      const bytes = Object.values(val.buffer);
+      if (bytes.length === 12) {
+        return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+    }
+    // Check if the object has a type: 'Buffer' or nested data array
+    if (val.type === 'Buffer' && Array.isArray(val.data) && val.data.length === 12) {
+      return val.data.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
 
-app.post('/api/db/mongo/query', (req, res) => {
-  const { tabId, connection, activeDb, collection, filter } = req.body;
+    const keys = Object.keys(val);
+    if (keys.length === 1) {
+      if (keys[0] === '$oid') return val.$oid;
+      if (keys[0] === '$date') {
+        if (val.$date && typeof val.$date === 'object' && val.$date.$numberLong) {
+          return new Date(parseInt(val.$date.$numberLong, 10)).toISOString();
+        }
+        return typeof val.$date === 'string' ? val.$date : new Date(val.$date).toISOString();
+      }
+      if (keys[0] === '$numberLong') return parseInt(val.$numberLong, 10);
+      if (keys[0] === '$numberInt') return parseInt(val.$numberInt, 10);
+      if (keys[0] === '$numberDecimal') return parseFloat(val.$numberDecimal);
+      if (keys[0] === '$numberDouble') return parseFloat(val.$numberDouble);
+    }
+    const flattened = {};
+    for (const [k, v] of Object.entries(val)) {
+      flattened[k] = flattenBson(v);
+    }
+    return flattened;
+  }
+  return val;
+}
+
+app.post('/api/db/mongo/query', async (req, res) => {
+  const { tabId, connection, activeDb, collection, filter, isCommand, commandText, skip, limit } = req.body;
   if (!tabId) return res.status(400).json({ error: 'tabId is required' });
   const client = activeSessions.get(tabId);
   if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
@@ -750,6 +827,116 @@ app.post('/api/db/mongo/query', (req, res) => {
   const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
   const dbName = activeDb || mongoConfig.database || 'admin';
 
+  if (isCommand) {
+    let uri = 'mongodb://';
+    if (username) {
+      uri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+    }
+    uri += `${host}:${port}/${dbName}`;
+    if (username) {
+      uri += '?authSource=admin';
+    }
+
+    const escapedCmd = commandText.replace(/"/g, '\\"');
+
+    const cmd = `if command -v mongosh &>/dev/null; then
+      mongosh --quiet "${uri}" --eval "
+        var res = ${escapedCmd};
+        if (res === undefined) {
+          JSON.stringify({ result: 'undefined' });
+        } else if (res && typeof res.toArray === 'function') {
+          JSON.stringify(res.toArray());
+        } else {
+          JSON.stringify(res);
+        }
+      "
+    else
+      mongo --quiet "${uri}" --eval "
+        var res = ${escapedCmd};
+        if (res === undefined) {
+          print(JSON.stringify({ result: 'undefined' }));
+        } else if (res && typeof res.toArray === 'function') {
+          print(JSON.stringify(res.toArray()));
+        } else {
+          print(JSON.stringify(res));
+        }
+      "
+    fi`;
+
+    client.exec(cmd, (err, stream) => {
+      if (err) return res.status(500).json({ error: `Failed to execute SSH command: ${err.message}` });
+      let stdout = '';
+      let stderr = '';
+      stream.on('data', (data) => { stdout += data.toString(); });
+      stream.stderr.on('data', (data) => { stderr += data.toString(); });
+      stream.on('close', () => {
+        const errOutput = stderr.trim();
+        if (errOutput && !stdout.trim()) {
+          return res.status(400).json({ error: errOutput });
+        }
+        try {
+          let cleanOutput = stdout.trim();
+          const jsonStart = cleanOutput.indexOf('{');
+          const jsonStartArr = cleanOutput.indexOf('[');
+          const startIdx = (jsonStart !== -1 && jsonStartArr !== -1)
+            ? Math.min(jsonStart, jsonStartArr)
+            : (jsonStart !== -1 ? jsonStart : jsonStartArr);
+
+          const jsonEnd = cleanOutput.lastIndexOf('}');
+          const jsonEndArr = cleanOutput.lastIndexOf(']');
+          const endIdx = Math.max(jsonEnd, jsonEndArr);
+
+          if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx) {
+            cleanOutput = cleanOutput.substring(startIdx, endIdx + 1);
+            const parsed = JSON.parse(cleanOutput);
+            const docs = Array.isArray(parsed) ? parsed : [parsed];
+            return res.json({ success: true, documents: flattenBson(docs) });
+          } else {
+            return res.json({ success: true, documents: [{ result: cleanOutput || 'Command executed successfully' }] });
+          }
+        } catch (parseErr) {
+          return res.json({ success: true, documents: [{ rawResult: stdout.trim() || stderr.trim() }] });
+        }
+      });
+    });
+    return;
+  }
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      const skipVal = Number(skip) || 0;
+      const limitVal = (limit !== undefined && limit !== null) ? Number(limit) : 500;
+      const docs = await db.collection(collection).find(filter || {}).skip(skipVal).limit(limitVal).toArray();
+      const totalCount = await db.collection(collection).countDocuments(filter || {});
+      return res.json({ success: true, documents: flattenBson(docs), totalCount });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+      // Fall back to CLI exec method below
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to command-line SSH exec
   let uri = 'mongodb://';
   if (username) {
     uri += `${username}:${password}@`;
@@ -759,13 +946,24 @@ app.post('/api/db/mongo/query', (req, res) => {
     uri += '?authSource=admin';
   }
 
+  const skipVal = Number(skip) || 0;
+  const limitVal = (limit !== undefined && limit !== null) ? Number(limit) : 500;
+  const limitStr = limitVal > 0 ? `.limit(${limitVal})` : '';
   const filterStr = filter ? JSON.stringify(filter).replace(/"/g, '\\"') : '{}';
 
   // Attempt using mongosh, fall back to mongo
   const cmd = `if command -v mongosh &>/dev/null; then
-    mongosh --quiet "${uri}" --eval "JSON.stringify(db.${collection}.find(${filterStr}).limit(100).toArray())"
+    mongosh --quiet "${uri}" --eval "
+      var docs = db.${collection}.find(${filterStr}).skip(${skipVal})${limitStr}.toArray();
+      var count = db.${collection}.countDocuments(${filterStr});
+      JSON.stringify({ documents: docs, totalCount: count });
+    "
   else
-    mongo --quiet "${uri}" --eval "printjson(db.${collection}.find(${filterStr}).limit(100).toArray())"
+    mongo --quiet "${uri}" --eval "
+      var docs = db.${collection}.find(${filterStr}).skip(${skipVal})${limitStr}.toArray();
+      var count = db.${collection}.countDocuments ? db.${collection}.countDocuments(${filterStr}) : db.${collection}.count(${filterStr});
+      print(JSON.stringify({ documents: docs, totalCount: count }));
+    "
   fi`;
 
   client.exec(cmd, (err, stream) => {
@@ -784,15 +982,862 @@ app.post('/api/db/mongo/query', (req, res) => {
 
       try {
         let cleanOutput = stdout.trim();
+        const jsonStart = cleanOutput.indexOf('{');
+        const jsonEnd = cleanOutput.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          cleanOutput = cleanOutput.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanOutput);
+          res.json({
+            success: true,
+            documents: flattenBson(parsed.documents || []),
+            totalCount: parsed.totalCount || 0
+          });
+        } else {
+          res.status(400).json({ error: cleanOutput || stderr.trim() || 'No documents returned' });
+        }
+      } catch (parseErr) {
+        res.status(500).json({ error: `Failed to parse query output: ${parseErr.message}`, rawOutput: stdout });
+      }
+    });
+  });
+});
+
+// REST API for MongoDB Saved Queries
+app.get('/api/db/mongo/queries', (req, res) => {
+  try {
+    const list = getAllSavedMongoQueries();
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/db/mongo/queries', (req, res) => {
+  try {
+    const { name, query } = req.body;
+    if (!name || !query) {
+      return res.status(400).json({ error: 'Name and query are required' });
+    }
+    const newQuery = createSavedMongoQuery({ name, query });
+    res.status(201).json(newQuery);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/db/mongo/queries/:id', (req, res) => {
+  try {
+    const deleted = deleteSavedMongoQuery(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Query not found' });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MongoDB Clone Collection Endpoint
+app.post('/api/db/mongo/clone-collection', async (req, res) => {
+  const { tabId, connection, activeDb, source, target } = req.body;
+  if (!tabId || !source || !target) {
+    return res.status(400).json({ error: 'tabId, source, and target are required' });
+  }
+
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = activeDb || mongoConfig.database || 'admin';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      await db.collection(source).aggregate([{ $out: target }]).next();
+      return res.json({ success: true });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver error in clone-collection, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "db.${source}.aggregate([{ \\$out: '${target}' }]).toArray()"
+  else
+    mongo --quiet "${uri}" --eval "db.${source}.aggregate([{ \\$out: '${target}' }]).toArray()"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `Failed to execute SSH clone command: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) {
+        return res.status(400).json({ error: errOutput });
+      }
+      res.json({ success: true });
+    });
+  });
+});
+
+// MongoDB Import CSV Endpoint
+app.post('/api/db/mongo/import-csv', async (req, res) => {
+  const { tabId, connection, activeDb, collection, documents } = req.body;
+  if (!tabId || !collection || !Array.isArray(documents)) {
+    return res.status(400).json({ error: 'tabId, collection, and documents (array) are required' });
+  }
+
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = activeDb || mongoConfig.database || 'admin';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      const result = await db.collection(collection).insertMany(documents);
+      return res.json({ success: true, insertedCount: result.insertedCount });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver error in import-csv, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  const escapedDocs = JSON.stringify(documents).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$');
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "db.${collection}.insertMany(${escapedDocs})"
+  else
+    mongo --quiet "${uri}" --eval "db.${collection}.insertMany(${escapedDocs})"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `Failed to execute SSH import command: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) {
+        return res.status(400).json({ error: errOutput });
+      }
+      res.json({ success: true, insertedCount: documents.length });
+    });
+  });
+});
+
+// MongoDB Databases discover endpoint
+app.post('/api/db/mongo/databases', async (req, res) => {
+  const { tabId, connection } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = mongoConfig.database || 'admin';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const adminDb = mongoClient.db(dbName).admin();
+      const dbsResult = await adminDb.listDatabases();
+      const dbsList = dbsResult.databases.map(d => d.name);
+      return res.json({ success: true, databases: dbsList });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver listDatabases error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to CLI
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "JSON.stringify(db.adminCommand({listDatabases: 1}).databases.map(d => d.name))"
+  else
+    mongo --quiet "${uri}" --eval "print(JSON.stringify(db.adminCommand({listDatabases: 1}).databases.map(d => d.name)))"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `Failed to execute SSH command: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) {
+        return res.status(400).json({ error: errOutput });
+      }
+      try {
+        let cleanOutput = stdout.trim();
         const jsonStart = cleanOutput.indexOf('[');
         const jsonEnd = cleanOutput.lastIndexOf(']');
         if (jsonStart !== -1 && jsonEnd !== -1) {
           cleanOutput = cleanOutput.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanOutput);
+          res.json({ success: true, databases: parsed });
+        } else {
+          res.status(400).json({ error: cleanOutput || stderr.trim() || 'No database list returned' });
         }
-        const parsed = JSON.parse(cleanOutput);
-        res.json({ success: true, documents: parsed });
       } catch (parseErr) {
-        res.status(500).json({ error: `Failed to parse query output: ${parseErr.message}`, rawOutput: stdout });
+        res.status(500).json({ error: `Failed to parse database list: ${parseErr.message}`, rawOutput: stdout });
+      }
+    });
+  });
+});
+
+// MongoDB Collections discover endpoint
+app.post('/api/db/mongo/collections', async (req, res) => {
+  const { tabId, connection, activeDb } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = activeDb || mongoConfig.database || 'admin';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      const collectionsList = await db.listCollections().toArray();
+      const names = collectionsList.map(c => c.name);
+      return res.json({ success: true, collections: names });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver listCollections error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to CLI
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "JSON.stringify(db.getCollectionNames())"
+  else
+    mongo --quiet "${uri}" --eval "print(JSON.stringify(db.getCollectionNames()))"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `Failed to execute SSH command: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) {
+        return res.status(400).json({ error: errOutput });
+      }
+      try {
+        let cleanOutput = stdout.trim();
+        const jsonStart = cleanOutput.indexOf('[');
+        const jsonEnd = cleanOutput.lastIndexOf(']');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          cleanOutput = cleanOutput.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanOutput);
+          res.json({ success: true, collections: parsed });
+        } else {
+          res.status(400).json({ error: cleanOutput || stderr.trim() || 'No collections list returned' });
+        }
+      } catch (parseErr) {
+        res.status(500).json({ error: `Failed to parse collections list: ${parseErr.message}`, rawOutput: stdout });
+      }
+    });
+  });
+});
+
+// MongoDB Update field endpoint
+app.post('/api/db/mongo/update', async (req, res) => {
+  const { tabId, connection, activeDb, collection, id, columnName, value } = req.body;
+  if (!tabId || !collection || id === undefined || !columnName)
+    return res.status(400).json({ error: 'tabId, collection, id, and columnName are required' });
+
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = activeDb || mongoConfig.database || 'admin';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      const filterObj = /^[0-9a-fA-F]{24}$/.test(id) ? { _id: new ObjectId(id) } : { _id: id };
+
+      let valueEval;
+      if (value === null || value === undefined || value === '') {
+        valueEval = null;
+      } else {
+        try {
+          valueEval = JSON.parse(value);
+        } catch (e) {
+          if (value === 'true') {
+            valueEval = true;
+          } else if (value === 'false') {
+            valueEval = false;
+          } else if (!isNaN(value) && value.trim() !== '') {
+            valueEval = Number(value);
+          } else {
+            valueEval = value;
+          }
+        }
+      }
+
+      const updateResult = await db.collection(collection).updateOne(filterObj, { $set: { [columnName]: valueEval } });
+      return res.json({ success: true, result: updateResult });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver update error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to CLI
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  // Handle _id type logic (ObjectId vs string/number)
+  const idFilter = /^[0-9a-fA-F]{24}$/.test(id) 
+    ? `{ _id: ObjectId('${id}') }` 
+    : (isNaN(id) || id.trim() === '' ? `{ _id: '${id}' }` : `{ _id: ${id} }`);
+
+  // Handle value parsing logic
+  let valueEval;
+  if (value === null || value === undefined || value === '') {
+    valueEval = 'null';
+  } else {
+    try {
+      const parsed = JSON.parse(value);
+      valueEval = JSON.stringify(parsed);
+    } catch (e) {
+      if (value === 'true') {
+        valueEval = 'true';
+      } else if (value === 'false') {
+        valueEval = 'false';
+      } else if (!isNaN(value) && value.trim() !== '') {
+        valueEval = value;
+      } else {
+        valueEval = JSON.stringify(value);
+      }
+    }
+  }
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "JSON.stringify(db.${collection}.updateOne(${idFilter}, { \\$set: { '${columnName}': ${valueEval} } }))"
+  else
+    mongo --quiet "${uri}" --eval "print(JSON.stringify(db.${collection}.updateOne(${idFilter}, { \\$set: { '${columnName}': ${valueEval} } })))"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command execution failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) return res.status(400).json({ error: errOutput });
+      try {
+        let cleanOutput = stdout.trim();
+        const jsonStart = cleanOutput.indexOf('{');
+        const jsonEnd = cleanOutput.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          cleanOutput = cleanOutput.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanOutput);
+          res.json({ success: true, result: parsed });
+        } else {
+          res.status(400).json({ error: cleanOutput || stderr.trim() || 'No update result returned' });
+        }
+      } catch (parseErr) {
+        res.status(500).json({ error: `Failed to parse update result: ${parseErr.message}`, rawOutput: stdout });
+      }
+    });
+  });
+});
+
+// MongoDB Replace whole document endpoint
+app.post('/api/db/mongo/replace-doc', async (req, res) => {
+  const { tabId, connection, activeDb, collection, id, document } = req.body;
+  if (!tabId || !collection || id === undefined || !document)
+    return res.status(400).json({ error: 'tabId, collection, id, and document are required' });
+
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = activeDb || mongoConfig.database || 'admin';
+
+  // Ensure document doesn't try to change _id value
+  const updatedDoc = { ...document };
+  delete updatedDoc._id;
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      const filterObj = /^[0-9a-fA-F]{24}$/.test(id) ? { _id: new ObjectId(id) } : { _id: id };
+      const replaceResult = await db.collection(collection).replaceOne(filterObj, updatedDoc);
+      return res.json({ success: true, result: replaceResult });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver replaceOne error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to CLI
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  const idFilter = /^[0-9a-fA-F]{24}$/.test(id) 
+    ? `{ _id: ObjectId('${id}') }` 
+    : (isNaN(id) || id.trim() === '' ? `{ _id: '${id}' }` : `{ _id: ${id} }`);
+
+  const docStr = JSON.stringify(updatedDoc).replace(/"/g, '\\"');
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "JSON.stringify(db.${collection}.replaceOne(${idFilter}, ${docStr}))"
+  else
+    mongo --quiet "${uri}" --eval "print(JSON.stringify(db.${collection}.replaceOne(${idFilter}, ${docStr})))"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command execution failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) return res.status(400).json({ error: errOutput });
+      try {
+        let cleanOutput = stdout.trim();
+        const jsonStart = cleanOutput.indexOf('{');
+        const jsonEnd = cleanOutput.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          cleanOutput = cleanOutput.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanOutput);
+          res.json({ success: true, result: parsed });
+        } else {
+          res.status(400).json({ error: cleanOutput || stderr.trim() || 'No replace result returned' });
+        }
+      } catch (parseErr) {
+        res.status(500).json({ error: `Failed to parse replace result: ${parseErr.message}`, rawOutput: stdout });
+      }
+    });
+  });
+});
+
+// MongoDB Insert document endpoint
+app.post('/api/db/mongo/insert', async (req, res) => {
+  const { tabId, connection, activeDb, collection, row } = req.body;
+  if (!tabId || !collection || !row || typeof row !== 'object')
+    return res.status(400).json({ error: 'tabId, collection, and row are required' });
+
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = activeDb || mongoConfig.database || 'admin';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      const parsedRow = {};
+      Object.entries(row).forEach(([k, v]) => {
+        if (v === '' || v === undefined || v === null) return;
+        try {
+          parsedRow[k] = JSON.parse(v);
+        } catch (e) {
+          if (v === 'true') parsedRow[k] = true;
+          else if (v === 'false') parsedRow[k] = false;
+          else if (!isNaN(v) && v.trim() !== '') parsedRow[k] = Number(v);
+          else parsedRow[k] = v;
+        }
+      });
+
+      if (parsedRow._id && /^[0-9a-fA-F]{24}$/.test(parsedRow._id)) {
+        parsedRow._id = new ObjectId(parsedRow._id);
+      }
+
+      const insertResult = await db.collection(collection).insertOne(parsedRow);
+      const insertedRow = { ...parsedRow, _id: insertResult.insertedId };
+      return res.json({ success: true, insertedRow: flattenBson(insertedRow) });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver insert error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to CLI
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  // Parse fields in the row object to their native type before sending to mongosh
+  const parsedRow = {};
+  Object.entries(row).forEach(([k, v]) => {
+    if (v === '' || v === undefined || v === null) {
+      // omit empty fields to let MongoDB generate default values
+      return;
+    }
+    try {
+      parsedRow[k] = JSON.parse(v);
+    } catch (e) {
+      if (v === 'true') {
+        parsedRow[k] = true;
+      } else if (v === 'false') {
+        parsedRow[k] = false;
+      } else if (!isNaN(v) && v.trim() !== '') {
+        parsedRow[k] = Number(v);
+      } else {
+        parsedRow[k] = v;
+      }
+    }
+  });
+
+  const docStr = JSON.stringify(parsedRow).replace(/"/g, '\\"');
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "JSON.stringify(db.${collection}.insertOne(${docStr}))"
+  else
+    mongo --quiet "${uri}" --eval "print(JSON.stringify(db.${collection}.insertOne(${docStr})))"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command execution failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) return res.status(400).json({ error: errOutput });
+      try {
+        let cleanOutput = stdout.trim();
+        const jsonStart = cleanOutput.indexOf('{');
+        const jsonEnd = cleanOutput.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          cleanOutput = cleanOutput.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanOutput);
+          const insertedRow = { ...parsedRow, _id: parsed.insertedId || Date.now().toString() };
+          res.json({ success: true, insertedRow });
+        } else {
+          res.status(400).json({ error: cleanOutput || stderr.trim() || 'No insert result returned' });
+        }
+      } catch (parseErr) {
+        res.status(500).json({ error: `Failed to parse insert result: ${parseErr.message}`, rawOutput: stdout });
+      }
+    });
+  });
+});
+
+// MongoDB Delete document endpoint
+app.post('/api/db/mongo/delete-row', async (req, res) => {
+  const { tabId, connection, activeDb, collection, id } = req.body;
+  if (!tabId || !collection || id === undefined)
+    return res.status(400).json({ error: 'tabId, collection, and id are required' });
+
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = activeDb || mongoConfig.database || 'admin';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      const filterObj = /^[0-9a-fA-F]{24}$/.test(id) ? { _id: new ObjectId(id) } : { _id: id };
+      const deleteResult = await db.collection(collection).deleteOne(filterObj);
+      return res.json({ success: true, result: deleteResult });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver delete error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to CLI
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  // Handle _id type logic (ObjectId vs string/number)
+  const idFilter = /^[0-9a-fA-F]{24}$/.test(id) 
+    ? `{ _id: ObjectId('${id}') }` 
+    : (isNaN(id) || id.trim() === '' ? `{ _id: '${id}' }` : `{ _id: ${id} }`);
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "JSON.stringify(db.${collection}.deleteOne(${idFilter}))"
+  else
+    mongo --quiet "${uri}" --eval "print(JSON.stringify(db.${collection}.deleteOne(${idFilter})))"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `SSH command execution failed: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) return res.status(400).json({ error: errOutput });
+      try {
+        let cleanOutput = stdout.trim();
+        const jsonStart = cleanOutput.indexOf('{');
+        const jsonEnd = cleanOutput.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          cleanOutput = cleanOutput.substring(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanOutput);
+          res.json({ success: true, result: parsed });
+        } else {
+          res.status(400).json({ error: cleanOutput || stderr.trim() || 'No delete result returned' });
+        }
+      } catch (parseErr) {
+        res.status(500).json({ error: `Failed to parse delete result: ${parseErr.message}`, rawOutput: stdout });
       }
     });
   });
@@ -1617,7 +2662,16 @@ wss.on('connection', (ws) => {
         if (config.authMethod === 'password') {
           sshConfig.password = config.password;
         } else if (config.authMethod === 'key') {
+          const trimmed = (config.privateKey || '').trim();
+          if (trimmed.startsWith('ssh-rsa') || trimmed.startsWith('ssh-dss') || trimmed.startsWith('ssh-ed25519') || trimmed.startsWith('ecdsa-')) {
+            sendStatus('disconnected', 'SSH Connection failed: You provided a Public Key (.pub) instead of a Private Key. Please provide the private key starting with "-----BEGIN ... PRIVATE KEY-----".');
+            ws.close();
+            return;
+          }
           sshConfig.privateKey = config.privateKey;
+          if (config.passphrase) {
+            sshConfig.passphrase = config.passphrase;
+          }
         } else {
           sendStatus('disconnected', 'Invalid authentication method.');
           ws.close();
@@ -1716,7 +2770,17 @@ wss.on('connection', (ws) => {
           }
         });
 
-        sshClient.connect(sshConfig);
+        try {
+          sshClient.connect(sshConfig);
+        } catch (connectErr) {
+          sendStatus('disconnected', `SSH Connection failed: ${connectErr.message}`);
+          if (sshClient) {
+            try {
+              sshClient.end();
+            } catch (e) {}
+          }
+          ws.close();
+        }
 
       } else if (msg.type === 'data') {
         if (sshStream) {

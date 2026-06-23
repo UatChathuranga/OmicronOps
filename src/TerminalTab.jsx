@@ -247,6 +247,16 @@ export default function TerminalTab({ tab, connections, onStatusChange, onRegist
 
     if (macroState.timeoutId) clearTimeout(macroState.timeoutId);
 
+    if (macroState.macro.stepMode && (macroState.currentIndex + 1 < macroState.lines.length)) {
+      const nextCommand = macroState.currentIndex + 1 < macroState.lines.length ? macroState.lines[macroState.currentIndex + 1] : 'None (finished)';
+      setRunningMacroInfo(prev => ({
+        ...prev,
+        isPaused: true,
+        nextCommand: nextCommand
+      }));
+      return;
+    }
+
     const hasInterleavedSleeps = macroState.lines.some(line => /^sleep\s+(\d+(?:\.\d+)?)(s|ms)?$/i.test(line));
 
     let nextDelayMs = 0;
@@ -262,6 +272,18 @@ export default function TerminalTab({ tab, connections, onStatusChange, onRegist
     macroState.timeoutId = setTimeout(() => {
       runMacroStep(macroState.currentIndex + 1);
     }, nextDelayMs);
+  };
+
+  const handleNextStep = () => {
+    const macroState = activeMacroRef.current;
+    if (!macroState) return;
+
+    setRunningMacroInfo(prev => ({
+      ...prev,
+      isPaused: false
+    }));
+
+    runMacroStep(macroState.currentIndex + 1);
   };
 
   const handleOpenSaveMacro = () => {
@@ -1090,14 +1112,21 @@ export default function TerminalTab({ tab, connections, onStatusChange, onRegist
           borderBottom: '1px solid rgba(99,102,241,0.3)',
           flexShrink: 0
         }}>
-          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#6366f1' }} />
+          <span style={{ 
+            display: 'inline-block', 
+            width: '8px', 
+            height: '8px', 
+            borderRadius: '50%', 
+            background: runningMacroInfo.isPaused ? '#f59e0b' : '#6366f1',
+            animation: runningMacroInfo.isPaused ? 'blink 1.5s infinite' : 'none'
+          }} />
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12px', color: '#818cf8', fontWeight: '600' }}>
-                Macro: {runningMacroInfo.name} ({runningMacroInfo.currentStep}/{runningMacroInfo.totalSteps})
+              <span style={{ fontSize: '12px', color: runningMacroInfo.isPaused ? '#f59e0b' : '#818cf8', fontWeight: '600' }}>
+                Macro: {runningMacroInfo.name} ({runningMacroInfo.currentStep}/{runningMacroInfo.totalSteps}){runningMacroInfo.isPaused ? ' (Paused)' : ''}
               </span>
               <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                Executing: <code style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.05)', padding: '1px 4px', borderRadius: '3px' }}>{runningMacroInfo.currentCommand}</code>
+                {runningMacroInfo.isPaused ? 'Executed: ' : 'Executing: '}<code style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.05)', padding: '1px 4px', borderRadius: '3px' }}>{runningMacroInfo.currentCommand}</code>
               </span>
             </div>
             {runningMacroInfo.nextCommand && runningMacroInfo.nextCommand !== 'None (finished)' && (
@@ -1106,20 +1135,38 @@ export default function TerminalTab({ tab, connections, onStatusChange, onRegist
               </div>
             )}
           </div>
-          <button
-            onClick={handleAbortActiveMacro}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              padding: '4px 10px', borderRadius: '5px', border: '1px solid rgba(239,68,68,0.3)',
-              background: 'rgba(239,68,68,0.15)', color: '#ef4444',
-              cursor: 'pointer', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap'
-            }}
-          >
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '2px' }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            Stop Macro
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {runningMacroInfo.isPaused && (
+              <button
+                onClick={handleNextStep}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px',
+                  padding: '4px 12px', borderRadius: '5px', border: 'none',
+                  background: '#f59e0b', color: '#0a0d16',
+                  cursor: 'pointer', fontSize: '12px', fontWeight: '700', whiteSpace: 'nowrap'
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '2px' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                Next Step
+              </button>
+            )}
+            <button
+              onClick={handleAbortActiveMacro}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '4px 10px', borderRadius: '5px', border: '1px solid rgba(239,68,68,0.3)',
+                background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+                cursor: 'pointer', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap'
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '2px' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Stop Macro
+            </button>
+          </div>
         </div>
       )}
 
