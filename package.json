@@ -1,7 +1,7 @@
 {
   "name": "omicron-ops",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "OmicronOps - A premium, lightweight, glassmorphic DevOps client featuring concurrent SSH shells, SFTP explorers, RabbitMQ monitoring, PostgreSQL managers, and Redis database browsers.",
   "homepage": "https://github.com/UatChathuranga/OmicronOps",
   "author": {
