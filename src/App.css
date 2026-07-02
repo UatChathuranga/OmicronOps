@@ -3443,6 +3443,21 @@ body.resizing-row {
   background: rgba(239, 68, 68, 0.1);
 }
 
+.redis-editor-action-btn.edit:hover {
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.redis-editor-action-btn.save:hover {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.redis-editor-action-btn.cancel:hover {
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .redis-add-row-form {
   display: flex;
   gap: 8px;

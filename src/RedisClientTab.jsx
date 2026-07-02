@@ -50,6 +50,8 @@ export function RedisView({ connection, tabId }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newKeyData, setNewKeyData] = useState({ name: '', type: 'string', value: '', ttl: '-1' });
   const [newHashField, setNewHashField] = useState({ field: '', value: '' });
+  const [editingHashField, setEditingHashField] = useState(null); // { originalField: string, field: string, value: string }
+  const [hashSearchQuery, setHashSearchQuery] = useState('');
   const [newListItem, setNewListItem] = useState('');
   const [newZSetItem, setNewZSetItem] = useState({ member: '', score: '0' });
   const [localStringValue, setLocalStringValue] = useState('');
@@ -258,6 +260,8 @@ export function RedisView({ connection, tabId }) {
   };
 
   useEffect(() => {
+    setEditingHashField(null);
+    setHashSearchQuery('');
     if (selectedKey && selectedDb) {
       const dbKeys = databases[selectedDb] || {};
       const keyInfo = dbKeys[selectedKey];
@@ -349,6 +353,23 @@ export function RedisView({ connection, tabId }) {
     const val = selectedKeyInfo?.value?.[oldField];
     await executeRedisUpdate(selectedDb, 'hash-del', selectedKey, { field: oldField });
     await executeRedisUpdate(selectedDb, 'hash-set', selectedKey, { field: newField, value: val });
+  };
+
+  const handleSaveHashField = async (originalField, newField, newValue) => {
+    if (!newField.trim()) {
+      alert("Field name cannot be empty.");
+      return;
+    }
+    const cleanNewField = newField.trim();
+    if (originalField !== cleanNewField) {
+      const delRes = await executeRedisUpdate(selectedDb, 'hash-del', selectedKey, { field: originalField });
+      if (delRes.success) {
+        await executeRedisUpdate(selectedDb, 'hash-set', selectedKey, { field: cleanNewField, value: newValue });
+      }
+    } else {
+      await executeRedisUpdate(selectedDb, 'hash-set', selectedKey, { field: cleanNewField, value: newValue });
+    }
+    setEditingHashField(null);
   };
 
   const handleUpdateHashField = (field, value) => {
@@ -1105,6 +1126,47 @@ export function RedisView({ connection, tabId }) {
                 {/* 2. HASH Type Editor */}
                 {selectedKeyInfo.type === 'hash' && (
                   <div className="redis-type-editor">
+                    <div className="redis-hash-search-wrapper" style={{ marginBottom: '10px', position: 'relative' }}>
+                      <input 
+                        type="text" 
+                        placeholder="Search fields by name..." 
+                        value={hashSearchQuery}
+                        onChange={(e) => setHashSearchQuery(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '6px 30px 6px 10px',
+                          background: '#131520',
+                          border: '1px solid var(--panel-border)',
+                          borderRadius: '4px',
+                          color: '#fff',
+                          fontSize: '0.75rem',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                      {hashSearchQuery && (
+                        <button 
+                          onClick={() => setHashSearchQuery('')}
+                          onMouseOver={(e) => e.currentTarget.style.color = '#fff'}
+                          onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                          style={{
+                            position: 'absolute',
+                            right: '8px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            padding: '2px'
+                          }}
+                        >
+                          ❌
+                        </button>
+                      )}
+                    </div>
+
                     <table className="redis-editor-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', textAlign: 'left' }}>
                       <thead>
                         <tr>
@@ -1119,46 +1181,97 @@ export function RedisView({ connection, tabId }) {
                             <td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '16px' }}>No fields found</td>
                           </tr>
                         ) : (
-                          Object.keys(selectedKeyInfo.value).map((field) => (
-                            <tr key={field}>
-                              <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--panel-border)' }}>
-                                <input 
-                                  type="text" 
-                                  className="redis-editor-input" 
-                                  defaultValue={field}
-                                  onBlur={(e) => {
-                                    if (e.target.value.trim() && e.target.value.trim() !== field) {
-                                      handleRenameHashField(field, e.target.value.trim());
-                                    }
-                                  }}
-                                  style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none' }}
-                                />
-                              </td>
-                              <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--panel-border)' }}>
-                                <input 
-                                  type="text" 
-                                  className="redis-editor-input" 
-                                  defaultValue={selectedKeyInfo.value[field] || ''}
-                                  onBlur={(e) => {
-                                    if (e.target.value !== selectedKeyInfo.value[field]) {
-                                      handleUpdateHashField(field, e.target.value);
-                                    }
-                                  }}
-                                  style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none' }}
-                                />
-                              </td>
-                              <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--panel-border)', textAlign: 'center' }}>
-                                <button 
-                                  className="redis-editor-action-btn delete" 
-                                  onClick={() => handleDeleteHashField(field)}
-                                  title="Delete field"
-                                  style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.85rem' }}
-                                >
-                                  🗑️
-                                </button>
-                              </td>
-                            </tr>
-                          ))
+                          (() => {
+                            const filteredFields = Object.keys(selectedKeyInfo.value).filter(field =>
+                              field.toLowerCase().includes(hashSearchQuery.toLowerCase())
+                            );
+                            if (filteredFields.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '16px' }}>No matching fields found</td>
+                                </tr>
+                              );
+                            }
+                            return filteredFields.map((field) => {
+                              const isEditing = editingHashField?.originalField === field;
+                              return (
+                                <tr key={field}>
+                                  <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--panel-border)' }}>
+                                    {isEditing ? (
+                                      <input 
+                                        type="text" 
+                                        className="redis-editor-input" 
+                                        value={editingHashField.field}
+                                        onChange={(e) => setEditingHashField({ ...editingHashField, field: e.target.value })}
+                                        style={{ width: '100%', background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(99, 102, 241, 0.4)', borderRadius: '4px', color: '#fff', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none', padding: '3px 6px' }}
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#818cf8', fontWeight: '600' }}>
+                                        {field}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--panel-border)' }}>
+                                    {isEditing ? (
+                                      <input 
+                                        type="text" 
+                                        className="redis-editor-input" 
+                                        value={editingHashField.value}
+                                        onChange={(e) => setEditingHashField({ ...editingHashField, value: e.target.value })}
+                                        style={{ width: '100%', background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(99, 102, 241, 0.4)', borderRadius: '4px', color: '#fff', fontFamily: 'monospace', fontSize: '0.75rem', outline: 'none', padding: '3px 6px' }}
+                                      />
+                                    ) : (
+                                      <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#e2e8f0', wordBreak: 'break-all' }}>
+                                        {selectedKeyInfo.value[field] || ''}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '6px 10px', borderBottom: '1px solid var(--panel-border)', textAlign: 'center' }}>
+                                    {isEditing ? (
+                                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
+                                        <button 
+                                          className="redis-editor-action-btn save" 
+                                          onClick={() => handleSaveHashField(field, editingHashField.field, editingHashField.value)}
+                                          title="Save changes"
+                                          style={{ background: 'transparent', border: 'none', color: '#34d399', cursor: 'pointer', fontSize: '0.85rem', padding: '2px 4px' }}
+                                        >
+                                          💾
+                                        </button>
+                                        <button 
+                                          className="redis-editor-action-btn cancel" 
+                                          onClick={() => setEditingHashField(null)}
+                                          title="Cancel"
+                                          style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.85rem', padding: '2px 4px' }}
+                                        >
+                                          ❌
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
+                                        <button 
+                                          className="redis-editor-action-btn edit" 
+                                          onClick={() => setEditingHashField({ originalField: field, field: field, value: selectedKeyInfo.value[field] || '' })}
+                                          title="Edit field"
+                                          style={{ background: 'transparent', border: 'none', color: '#60a5fa', cursor: 'pointer', fontSize: '0.85rem', padding: '2px 4px' }}
+                                        >
+                                          ✏️
+                                        </button>
+                                        <button 
+                                          className="redis-editor-action-btn delete" 
+                                          onClick={() => handleDeleteHashField(field)}
+                                          title="Delete field"
+                                          style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '0.85rem', padding: '2px 4px' }}
+                                        >
+                                          🗑️
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()
                         )}
                       </tbody>
                     </table>
