@@ -1843,6 +1843,165 @@ app.post('/api/db/mongo/delete-row', async (req, res) => {
   });
 });
 
+// MongoDB Create Collection endpoint
+app.post('/api/db/mongo/create-collection', async (req, res) => {
+  const { tabId, connection, activeDb, collectionName } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  if (!collectionName) return res.status(400).json({ error: 'Collection name is required' });
+
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+  const dbName = activeDb || mongoConfig.database || 'admin';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      await db.createCollection(collectionName);
+      return res.json({ success: true });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver createCollection error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to CLI
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "JSON.stringify(db.createCollection('${collectionName}'))"
+  else
+    mongo --quiet "${uri}" --eval "print(JSON.stringify(db.createCollection('${collectionName}')))"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `Failed to execute SSH command: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) {
+        return res.status(400).json({ error: errOutput });
+      }
+      res.json({ success: true });
+    });
+  });
+});
+
+// MongoDB Create Database endpoint
+app.post('/api/db/mongo/create-database', async (req, res) => {
+  const { tabId, connection, dbName } = req.body;
+  if (!tabId) return res.status(400).json({ error: 'tabId is required' });
+  if (!dbName) return res.status(400).json({ error: 'Database name is required' });
+
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Active SSH session not found' });
+
+  const dbConnection = connection?.id ? getConnectionById(connection.id, true) : null;
+  const mongoConfig = dbConnection?.services?.mongo || connection?.services?.mongo || {};
+  const host = dbConnection?.host || connection?.host || '127.0.0.1';
+  const port = mongoConfig.port || 27017;
+  const username = mongoConfig.username || '';
+  const password = mongoConfig.password && mongoConfig.password !== '********' ? mongoConfig.password : '';
+
+  if (MongoClient) {
+    let tunnel = null;
+    let mongoClient = null;
+    try {
+      tunnel = await createSshTunnel(client, host, port);
+      let localUri = 'mongodb://';
+      if (username) {
+        localUri += `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`;
+      }
+      localUri += `127.0.0.1:${tunnel.port}/${dbName}`;
+      if (username) {
+        localUri += '?authSource=admin';
+      }
+
+      mongoClient = new MongoClient(localUri, { serverSelectionTimeoutMS: 5000 });
+      await mongoClient.connect();
+
+      const db = mongoClient.db(dbName);
+      // Create a default collection to instantiate the database
+      await db.createCollection('init');
+      return res.json({ success: true });
+    } catch (driverErr) {
+      console.warn("MongoDB Node.js driver createDatabase error, falling back to SSH CLI exec:", driverErr);
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    } finally {
+      if (mongoClient) await mongoClient.close().catch(() => {});
+      if (tunnel) await tunnel.close().catch(() => {});
+    }
+  }
+
+  // Fallback to CLI
+  let uri = 'mongodb://';
+  if (username) {
+    uri += `${username}:${password}@`;
+  }
+  uri += `${host}:${port}/${dbName}`;
+  if (username) {
+    uri += '?authSource=admin';
+  }
+
+  const cmd = `if command -v mongosh &>/dev/null; then
+    mongosh --quiet "${uri}" --eval "JSON.stringify(db.createCollection('init'))"
+  else
+    mongo --quiet "${uri}" --eval "print(JSON.stringify(db.createCollection('init')))"
+  fi`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `Failed to execute SSH command: ${err.message}` });
+    let stdout = '';
+    let stderr = '';
+    stream.on('data', (data) => { stdout += data.toString(); });
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+    stream.on('close', () => {
+      const errOutput = stderr.trim();
+      if (errOutput && !stdout.trim()) {
+        return res.status(400).json({ error: errOutput });
+      }
+      res.json({ success: true });
+    });
+  });
+});
+
+
 // Helper for parsing redis-cli --csv output
 function parseCsvLines(stdout) {
   const results = [];

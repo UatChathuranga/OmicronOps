@@ -76,6 +76,219 @@ function highlightMongo(text) {
   return escaped;
 }
 
+function highlightBsonJson(jsonText) {
+  if (!jsonText) return '';
+  let escaped = jsonText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return escaped.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(?=\s*:))|("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*")|(\b(true|false|null)\b)|(\b-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?\b)/g, (match) => {
+    let cls = 'mongo-number';
+    if (/^"/.test(match)) {
+      if (/:$/.test(match) || escaped[escaped.indexOf(match) + match.length] === ':') {
+        cls = 'mongo-key';
+      } else {
+        cls = 'mongo-string';
+      }
+    } else if (/true|false/.test(match)) {
+      cls = 'mongo-boolean';
+    } else if (/null/.test(match)) {
+      cls = 'mongo-null';
+    }
+    
+    if (cls === 'mongo-key') {
+      return `<span style="color: #93c5fd; font-weight: 500;">${match}</span>`;
+    } else if (cls === 'mongo-string') {
+      return `<span style="color: #86efac;">${match}</span>`;
+    } else if (cls === 'mongo-number') {
+      return `<span style="color: #fdba74;">${match}</span>`;
+    } else if (cls === 'mongo-boolean') {
+      return `<span style="color: #f472b6; font-weight: bold;">${match}</span>`;
+    } else if (cls === 'mongo-null') {
+      return `<span style="color: #94a3b8; font-style: italic;">${match}</span>`;
+    }
+    return match;
+  });
+}
+
+function BsonTreeNode({ label, value, path = '', index, onEdit, onDelete, isRoot = false }) {
+  const [isExpanded, setIsExpanded] = useState(isRoot ? (index === 0) : false);
+
+  const toggleExpand = (e) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
+  };
+
+  let type = typeof value;
+  let typeLabel = '';
+  let displayValue = '';
+  let isExpandable = false;
+
+  if (value === null) {
+    type = 'null';
+    typeLabel = 'Null';
+    displayValue = 'null';
+  } else if (Array.isArray(value)) {
+    type = 'array';
+    typeLabel = `Array [${value.length}]`;
+    isExpandable = true;
+  } else if (type === 'object') {
+    if (value.$oid) {
+      type = 'objectid';
+      typeLabel = 'ObjectId';
+      displayValue = `ObjectId("${value.$oid}")`;
+    } else if (value.$date) {
+      type = 'date';
+      typeLabel = 'Date';
+      displayValue = `ISODate("${value.$date}")`;
+    } else {
+      typeLabel = `Object {${Object.keys(value).length}}`;
+      isExpandable = true;
+    }
+  } else {
+    if (type === 'string') {
+      typeLabel = 'String';
+      displayValue = `"${value}"`;
+    } else if (type === 'number') {
+      typeLabel = Number.isInteger(value) ? 'Int32' : 'Double';
+      displayValue = String(value);
+    } else if (type === 'boolean') {
+      typeLabel = 'Boolean';
+      displayValue = String(value);
+    }
+  }
+
+  return (
+    <div className="bson-tree-row" style={{ marginLeft: isRoot ? '0' : '16px' }}>
+      <div 
+        className="bson-tree-node-header" 
+        onClick={isExpandable ? toggleExpand : undefined}
+      >
+        {isExpandable ? (
+          <span className={`bson-tree-arrow ${isExpanded ? 'expanded' : ''}`}>▶</span>
+        ) : (
+          <span className="bson-tree-spacer" />
+        )}
+        
+        {isExpandable ? (
+          <span className="bson-tree-icon">{type === 'array' ? '📂' : '📁'}</span>
+        ) : (
+          <span className="bson-tree-icon">📄</span>
+        )}
+
+        <span className="bson-tree-key">{label}</span>
+        <span className="bson-tree-colon">:</span>
+
+        {displayValue && (
+          <span className={`bson-tree-value type-${type}`}>
+            {displayValue}
+          </span>
+        )}
+
+        <span className="bson-tree-type-label">({typeLabel})</span>
+
+        {isRoot && (
+          <div className="bson-tree-actions" onClick={e => e.stopPropagation()}>
+            <button 
+              className="bson-tree-action-btn" 
+              onClick={() => onEdit(value)}
+              title="Edit Document (JSON)"
+            >
+              ✏️ Edit
+            </button>
+            <button 
+              className="bson-tree-action-btn btn-delete" 
+              onClick={() => onDelete(index)}
+              title="Delete Document"
+            >
+              🗑️ Delete
+            </button>
+          </div>
+        )}
+      </div>
+
+      {isExpandable && isExpanded && (
+        <div className="bson-tree-node-children" style={{ marginLeft: '12px', paddingLeft: '8px' }}>
+          {type === 'array' ? (
+            value.map((item, idx) => (
+              <BsonTreeNode
+                key={idx}
+                label={String(idx)}
+                value={item}
+                path={`${path}[${idx}]`}
+                index={index}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))
+          ) : (
+            Object.entries(value).map(([key, val]) => (
+              <BsonTreeNode
+                key={key}
+                label={key}
+                value={val}
+                path={path ? `${path}.${key}` : key}
+                index={index}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BsonTreeView({ documents, onEdit, onDelete, startIndex = 0 }) {
+  if (!documents || documents.length === 0) {
+    return (
+      <div style={{ padding: '20px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.8rem' }}>
+        No documents found.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bson-tree-container" style={{ height: '100%', overflow: 'auto', boxSizing: 'border-box' }}>
+      {documents.map((doc, idx) => {
+        const absIdx = startIndex + idx;
+        return (
+          <BsonTreeNode
+            key={doc._id || absIdx}
+            label={`{ ${absIdx} }`}
+            value={doc}
+            path=""
+            index={absIdx}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            isRoot={true}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function RawTextView({ documents }) {
+  const prettyJson = JSON.stringify(documents, null, 2);
+  return (
+    <pre style={{
+      margin: 0,
+      padding: '12px',
+      background: '#111115',
+      color: '#cbd5e1',
+      fontSize: '0.8rem',
+      fontFamily: "'Fira Code', 'Courier New', Courier, monospace",
+      overflow: 'auto',
+      height: '100%',
+      boxSizing: 'border-box',
+      lineHeight: '1.5',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-all'
+    }}>
+      <code dangerouslySetInnerHTML={{ __html: highlightBsonJson(prettyJson) }} />
+    </pre>
+  );
+}
+
 export function MongoDbView({ connection, tabId }) {
   const mongoConfig = connection?.services?.mongo || {};
   const [isConnected, setIsConnected] = useState(false);
@@ -111,6 +324,21 @@ export function MongoDbView({ connection, tabId }) {
   const [saveError, setSaveError] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(null);
 
+  // Abort controller ref for running queries
+  const abortControllerRef = useRef(null);
+
+  // Database / Collection Creation Modal states
+  const [createDbModalOpen, setCreateDbModalOpen] = useState(false);
+  const [newDbName, setNewDbName] = useState('');
+  const [createDbError, setCreateDbError] = useState(null);
+  const [isCreatingDb, setIsCreatingDb] = useState(false);
+
+  const [createColModalOpen, setCreateColModalOpen] = useState(false);
+  const [newColName, setNewColName] = useState('');
+  const [createColError, setCreateColError] = useState(null);
+  const [isCreatingCol, setIsCreatingCol] = useState(false);
+
+
   // New row insertion states
   const [newRow, setNewRow] = useState(null);
   const [isSavingNewRow, setIsSavingNewRow] = useState(false);
@@ -140,6 +368,8 @@ export function MongoDbView({ connection, tabId }) {
   const [tabs, setTabsList] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
   const activeTabIdRef = useRef(activeTabId);
+  const [viewMode, setViewMode] = useState('tree');
+  const [queryDuration, setQueryDuration] = useState(null);
 
   // Collection Search
   const [collectionSearch, setCollectionSearch] = useState('');
@@ -240,7 +470,9 @@ export function MongoDbView({ connection, tabId }) {
         saveError: null,
         saveSuccess: null,
         newRowError: null,
-        deleteError: null
+        deleteError: null,
+        viewMode: 'tree',
+        queryDuration: null
       };
 
       setTabsList(prev => [...prev, newTab]);
@@ -261,6 +493,8 @@ export function MongoDbView({ connection, tabId }) {
       setSaveSuccess(null);
       setNewRowError(null);
       setDeleteError(null);
+      setViewMode('tree');
+      setQueryDuration(null);
     }
   };
 
@@ -284,7 +518,9 @@ export function MongoDbView({ connection, tabId }) {
           saveError,
           saveSuccess,
           newRowError,
-          deleteError
+          deleteError,
+          viewMode,
+          queryDuration
         };
       }
       return t;
@@ -304,7 +540,9 @@ export function MongoDbView({ connection, tabId }) {
     saveError,
     saveSuccess,
     newRowError,
-    deleteError
+    deleteError,
+    viewMode,
+    queryDuration
   ]);
 
   const textareaRef = useRef(null);
@@ -416,6 +654,105 @@ export function MongoDbView({ connection, tabId }) {
     setActiveTabId(null);
   };
 
+  const handleCreateDatabase = () => {
+    if (!newDbName.trim()) {
+      setCreateDbError("Database name is required.");
+      return;
+    }
+    setIsCreatingDb(true);
+    setCreateDbError(null);
+
+    if (!tabId) {
+      // Sandbox mode
+      setTimeout(() => {
+        const db = newDbName.trim();
+        mockMongoCollections.current[db] = { init: [] };
+        setDatabases(Object.keys(mockMongoCollections.current));
+        setActiveDb(db);
+        setCollections(['init']);
+        setSelectedItem({ type: 'collection', name: 'init' });
+        setIsCreatingDb(false);
+        setCreateDbModalOpen(false);
+        setNewDbName('');
+      }, 800);
+      return;
+    }
+
+    fetch('/api/db/mongo/create-database', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tabId, connection, dbName: newDbName.trim() })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        fetchDatabases();
+        setActiveDb(newDbName.trim());
+        fetchCollections(newDbName.trim());
+        setSelectedItem({ type: 'collection', name: 'init' });
+        setCreateDbModalOpen(false);
+        setNewDbName('');
+      } else {
+        setCreateDbError(data.error || 'Failed to create database.');
+      }
+    })
+    .catch(err => {
+      setCreateDbError(err.message || 'Failed to create database.');
+    })
+    .finally(() => {
+      setIsCreatingDb(false);
+    });
+  };
+
+  const handleCreateCollection = () => {
+    if (!newColName.trim()) {
+      setCreateColError("Collection name is required.");
+      return;
+    }
+    setIsCreatingCol(true);
+    setCreateColError(null);
+
+    if (!tabId) {
+      // Sandbox mode
+      setTimeout(() => {
+        const col = newColName.trim();
+        if (!mockMongoCollections.current[activeDb]) {
+          mockMongoCollections.current[activeDb] = {};
+        }
+        mockMongoCollections.current[activeDb][col] = [];
+        setCollections(Object.keys(mockMongoCollections.current[activeDb]));
+        setSelectedItem({ type: 'collection', name: col });
+        setIsCreatingCol(false);
+        setCreateColModalOpen(false);
+        setNewColName('');
+      }, 800);
+      return;
+    }
+
+    fetch('/api/db/mongo/create-collection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tabId, connection, activeDb, collectionName: newColName.trim() })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        fetchCollections(activeDb);
+        setSelectedItem({ type: 'collection', name: newColName.trim() });
+        setCreateColModalOpen(false);
+        setNewColName('');
+      } else {
+        setCreateColError(data.error || 'Failed to create collection.');
+      }
+    })
+    .catch(err => {
+      setCreateColError(err.message || 'Failed to create collection.');
+    })
+    .finally(() => {
+      setIsCreatingCol(false);
+    });
+  };
+
   useEffect(() => {
     if (!isConnected) return;
     fetchCollections(activeDb);
@@ -437,6 +774,8 @@ export function MongoDbView({ connection, tabId }) {
     setSaveSuccess(targetTab.saveSuccess || null);
     setNewRowError(targetTab.newRowError || null);
     setDeleteError(targetTab.deleteError || null);
+    setViewMode(targetTab.viewMode || 'tree');
+    setQueryDuration(targetTab.queryDuration || null);
     if (targetTab.type === 'query') {
       setActiveQueryCollection(targetTab.collectionName || collections[0] || 'users');
     }
@@ -460,7 +799,7 @@ export function MongoDbView({ connection, tabId }) {
       return;
     }
 
-    const query = type === 'collection' ? `db.${name}.find({})` : '{}';
+    const query = type === 'collection' ? `db.getCollection('${name}').find({})` : '{}';
     const newTab = {
       id: tabKey,
       type: type,
@@ -480,7 +819,9 @@ export function MongoDbView({ connection, tabId }) {
       saveError: null,
       saveSuccess: null,
       newRowError: null,
-      deleteError: null
+      deleteError: null,
+      viewMode: 'tree',
+      queryDuration: null
     };
 
     setTabsList(prev => [...prev, newTab]);
@@ -501,6 +842,8 @@ export function MongoDbView({ connection, tabId }) {
     setSaveSuccess(null);
     setNewRowError(null);
     setDeleteError(null);
+    setViewMode('tree');
+    setQueryDuration(null);
 
     runRealQueryForTab(query, tabKey, name, 0);
   };
@@ -510,7 +853,7 @@ export function MongoDbView({ connection, tabId }) {
     const tabKey = `query-tab-${Date.now()}`;
     const defaultCol = collections[0] || 'users';
     
-    const defaultQuery = `db.${defaultCol}.find({})`;
+    const defaultQuery = `db.getCollection('${defaultCol}').find({})`;
     const newTab = {
       id: tabKey,
       type: 'query',
@@ -530,7 +873,9 @@ export function MongoDbView({ connection, tabId }) {
       saveError: null,
       saveSuccess: null,
       newRowError: null,
-      deleteError: null
+      deleteError: null,
+      viewMode: 'tree',
+      queryDuration: null
     };
 
     setTabsList(prev => [...prev, newTab]);
@@ -552,6 +897,8 @@ export function MongoDbView({ connection, tabId }) {
     setSaveSuccess(null);
     setNewRowError(null);
     setDeleteError(null);
+    setViewMode('tree');
+    setQueryDuration(null);
   };
 
   const closeTab = (tabIdToClose, e) => {
@@ -592,43 +939,63 @@ export function MongoDbView({ connection, tabId }) {
     }));
   };
 
-  const runLocalMockFilter = (parsedFilter, targetTabId, colName, remoteError = null) => {
+  const runLocalMockFilter = (parsedFilter, targetTabId, colName, remoteError = null, startTime = null) => {
+    const start = startTime || performance.now();
     const dbCollections = mockMongoCollections.current[activeDb] || {};
     const collectionDocs = dbCollections[colName] || [];
     
     try {
       const filterKeys = Object.keys(parsedFilter);
+      let results;
       if (filterKeys.length === 0) {
-        const results = {
+        results = {
           success: true,
           documents: collectionDocs,
           warning: remoteError ? `Remote connection failed (${remoteError}). Displaying local sandbox mock data.` : null
         };
-        updateTabResults(targetTabId, results);
-        if (activeTabIdRef.current === targetTabId) setQueryResults(results);
-        return;
+      } else {
+        const filtered = collectionDocs.filter(doc => {
+          return filterKeys.every(key => {
+            return String(doc[key]) === String(parsedFilter[key]);
+          });
+        });
+        results = {
+          success: true,
+          documents: filtered,
+          warning: remoteError ? `Remote connection failed (${remoteError}). Displaying filtered local sandbox mock data.` : null
+        };
       }
       
-      const filtered = collectionDocs.filter(doc => {
-        return filterKeys.every(key => {
-          return String(doc[key]) === String(parsedFilter[key]);
-        });
-      });
-      const results = {
-        success: true,
-        documents: filtered,
-        warning: remoteError ? `Remote connection failed (${remoteError}). Displaying filtered local sandbox mock data.` : null
-      };
+      const duration = Math.round(performance.now() - start);
       updateTabResults(targetTabId, results);
-      if (activeTabIdRef.current === targetTabId) setQueryResults(results);
+      if (activeTabIdRef.current === targetTabId) {
+        setQueryResults(results);
+        setQueryDuration(duration);
+        setTabsList(prev => prev.map(t => {
+          if (t.id === targetTabId) {
+            return { ...t, queryResults: results, queryDuration: duration };
+          }
+          return t;
+        }));
+      }
     } catch (err) {
       const results = {
         success: true,
         documents: collectionDocs,
         warning: remoteError ? `Remote connection failed (${remoteError}). Displaying local sandbox mock data.` : null
       };
+      const duration = Math.round(performance.now() - start);
       updateTabResults(targetTabId, results);
-      if (activeTabIdRef.current === targetTabId) setQueryResults(results);
+      if (activeTabIdRef.current === targetTabId) {
+        setQueryResults(results);
+        setQueryDuration(duration);
+        setTabsList(prev => prev.map(t => {
+          if (t.id === targetTabId) {
+            return { ...t, queryResults: results, queryDuration: duration };
+          }
+          return t;
+        }));
+      }
     }
   };
 
@@ -636,14 +1003,19 @@ export function MongoDbView({ connection, tabId }) {
     let parsedFilter = {};
     let isCommand = false;
     let cleanQuery = queryToRun.trim();
+    const startTime = performance.now();
 
     if (cleanQuery.startsWith('rs.') || (cleanQuery.startsWith('db.') && !cleanQuery.includes('.find('))) {
       isCommand = true;
     } else {
       try {
-        const findMatch = cleanQuery.match(/db\.[a-zA-Z0-9_.-]+\.find\s*\(([\s\S]*)\)/);
+        const findMatch = cleanQuery.match(/db\.(?:getCollection\(['"]([^'"]+)['"]\)|([a-zA-Z0-9_.-]+))\.find\s*\(([\s\S]*)\)/);
         if (findMatch) {
-          cleanQuery = findMatch[1].trim();
+          const parsedCol = findMatch[1] || findMatch[2];
+          if (parsedCol) {
+            colName = parsedCol;
+          }
+          cleanQuery = findMatch[3].trim();
           if (!cleanQuery) {
             cleanQuery = '{}';
           }
@@ -676,13 +1048,19 @@ export function MongoDbView({ connection, tabId }) {
     }
 
     if (!tabId) {
-      runLocalMockFilter(isCommand ? {} : parsedFilter, targetTabId, colName);
+      runLocalMockFilter(isCommand ? {} : parsedFilter, targetTabId, colName, null, startTime);
       return;
     }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
 
     fetch('/api/db/mongo/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: abortControllerRef.current.signal,
       body: JSON.stringify({
         tabId,
         connection,
@@ -702,6 +1080,7 @@ export function MongoDbView({ connection, tabId }) {
       return res.json();
     })
     .then(data => {
+      const duration = Math.round(performance.now() - startTime);
       const resultsData = data.success ? {
         success: true,
         documents: data.documents || [],
@@ -714,10 +1093,16 @@ export function MongoDbView({ connection, tabId }) {
       updateTabResults(targetTabId, resultsData);
       if (activeTabIdRef.current === targetTabId) {
         setQueryResults(resultsData);
+        setQueryDuration(duration);
         setLoadedSkip(skipVal);
         setTabsList(prev => prev.map(t => {
           if (t.id === targetTabId) {
-            return { ...t, loadedSkip: skipVal, queryResults: resultsData };
+            return { 
+              ...t, 
+              loadedSkip: skipVal, 
+              queryResults: resultsData,
+              queryDuration: duration
+            };
           }
           return t;
         }));
@@ -727,8 +1112,26 @@ export function MongoDbView({ connection, tabId }) {
       }
     })
     .catch(err => {
-      runLocalMockFilter(isCommand ? {} : parsedFilter, targetTabId, colName, err.message);
+      if (err.name === 'AbortError') {
+        const errorState = { success: false, error: "Query execution cancelled by user." };
+        updateTabResults(targetTabId, errorState);
+        if (activeTabIdRef.current === targetTabId) setQueryResults(errorState);
+        return;
+      }
+      runLocalMockFilter(isCommand ? {} : parsedFilter, targetTabId, colName, err.message, startTime);
     });
+  };
+
+  const handleCancelQuery = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    const cancelledState = { success: false, error: "Query execution cancelled by user." };
+    updateTabResults(activeTabId, cancelledState);
+    if (activeTabIdRef.current === activeTabId) {
+      setQueryResults(cancelledState);
+    }
   };
 
   const runQuery = () => {
@@ -745,8 +1148,8 @@ export function MongoDbView({ connection, tabId }) {
     }
   };
 
-  // CSV Export Utility
-  const handleExportCsv = () => {
+  // JSON Export Utility
+  const handleExportJson = () => {
     let parsedFilter = {};
     let isCommand = false;
     let cleanQuery = queryText.trim();
@@ -808,28 +1211,13 @@ export function MongoDbView({ connection, tabId }) {
         return;
       }
       
-      const cols = [...new Set(docsList.flatMap(doc => Object.keys(doc)))];
-      
-      const csvContent = [
-        cols.join(','),
-        ...docsList.map(row => 
-          cols.map(col => {
-            const val = row[col] === null || row[col] === undefined 
-              ? '' 
-              : (typeof row[col] === 'object' ? JSON.stringify(row[col]) : String(row[col]));
-            if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-              return `"${val.replace(/"/g, '""')}"`;
-            }
-            return val;
-          }).join(',')
-        )
-      ].join('\n');
+      const jsonContent = JSON.stringify(docsList, null, 2);
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `mongo_results_${colName}_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '_')}.csv`);
+      link.setAttribute('download', `mongo_results_${colName}_${new Date().toISOString().slice(0,19).replace(/[:T]/g, '_')}.json`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -1190,9 +1578,10 @@ export function MongoDbView({ connection, tabId }) {
     }
   };
 
-  const handleDeleteSelectedRows = async () => {
-    if (selectedRows.size === 0) return;
-    const count = selectedRows.size;
+  const handleDeleteSelectedRows = async (singleIndex = null) => {
+    const targets = singleIndex !== null ? new Set([singleIndex]) : selectedRows;
+    if (targets.size === 0) return;
+    const count = targets.size;
     const colName = selectedItem.type === 'collection' ? selectedItem.name : activeQueryCollection;
     const confirmed = window.confirm(
       `Are you sure you want to permanently delete ${count} document${count > 1 ? 's' : ''} from "${colName}"?\n\nThis cannot be undone.`
@@ -1204,7 +1593,7 @@ export function MongoDbView({ connection, tabId }) {
     const errors = [];
     const deletedIndices = [];
 
-    for (const absIdx of selectedRows) {
+    for (const absIdx of targets) {
       const row = (queryResults?.documents || [])[absIdx];
       if (!row) continue;
       const pkVal = row['_id'];
@@ -1584,150 +1973,469 @@ export function MongoDbView({ connection, tabId }) {
           margin-bottom: 12px;
           transition: max-height 0.2s ease-out;
         }
+
+        /* Bson Tree View Styles */
+        .bson-tree-container {
+          padding: 8px;
+          font-family: 'Fira Code', 'Courier New', Courier, monospace;
+          font-size: 0.78rem;
+          color: #cbd5e1;
+        }
+        .bson-tree-row {
+          display: flex;
+          flex-direction: column;
+          margin: 2px 0;
+        }
+        .bson-tree-node-header {
+          display: flex;
+          align-items: center;
+          padding: 4px 6px;
+          cursor: pointer;
+          border-radius: 4px;
+          transition: background 0.15s;
+          user-select: none;
+        }
+        .bson-tree-node-header:hover {
+          background: rgba(255, 255, 255, 0.05);
+        }
+        .bson-tree-arrow {
+          display: inline-block;
+          width: 14px;
+          text-align: center;
+          margin-right: 4px;
+          font-size: 0.65rem;
+          color: var(--text-muted);
+          transition: transform 0.15s ease;
+        }
+        .bson-tree-arrow.expanded {
+          transform: rotate(90deg);
+          color: #fff;
+        }
+        .bson-tree-spacer {
+          display: inline-block;
+          width: 14px;
+          margin-right: 4px;
+        }
+        .bson-tree-icon {
+          margin-right: 6px;
+          font-size: 0.85rem;
+        }
+        .bson-tree-key {
+          color: #93c5fd;
+          font-weight: 500;
+        }
+        .bson-tree-colon {
+          color: var(--text-muted);
+          margin-right: 6px;
+        }
+        .bson-tree-value {
+          font-weight: 400;
+        }
+        .bson-tree-value.type-string {
+          color: #86efac;
+        }
+        .bson-tree-value.type-number {
+          color: #fdba74;
+        }
+        .bson-tree-value.type-boolean {
+          color: #f472b6;
+          font-weight: bold;
+        }
+        .bson-tree-value.type-null {
+          color: #94a3b8;
+          font-style: italic;
+        }
+        .bson-tree-value.type-objectid {
+          color: #c084fc;
+        }
+        .bson-tree-value.type-date {
+          color: #2dd4bf;
+        }
+        .bson-tree-type-label {
+          color: var(--text-muted);
+          font-size: 0.68rem;
+          margin-left: 8px;
+          opacity: 0.75;
+        }
+        .bson-tree-node-children {
+          border-left: 1px dashed rgba(255, 255, 255, 0.15);
+        }
+        .bson-tree-actions {
+          margin-left: auto;
+          display: flex;
+          gap: 6px;
+          opacity: 0;
+          transition: opacity 0.15s ease;
+        }
+        .bson-tree-node-header:hover .bson-tree-actions {
+          opacity: 1;
+        }
+        .bson-tree-action-btn {
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid var(--panel-border);
+          border-radius: 3px;
+          color: #e2e8f0;
+          padding: 1px 6px;
+          font-size: 0.65rem;
+          cursor: pointer;
+          transition: background 0.15s, color 0.15s;
+        }
+        .bson-tree-action-btn:hover {
+          background: var(--accent-primary);
+          color: #fff;
+        }
+        .bson-tree-action-btn.btn-delete:hover {
+          background: #ef4444;
+          color: #fff;
+        }
+
+        /* Sidebar Connection Tree Styles */
+        .bson-sidebar-tree {
+          font-size: 0.76rem;
+          color: #cbd5e1;
+        }
+        .sidebar-tree-node-wrapper {
+          margin: 1px 0;
+        }
+        .sidebar-tree-node {
+          display: flex;
+          align-items: center;
+          padding: 5px 6px;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: background 0.1s, color 0.1s;
+          user-select: none;
+        }
+        .sidebar-tree-node:hover {
+          background: rgba(255, 255, 255, 0.04);
+        }
+        .sidebar-tree-node.active {
+          background: rgba(59, 130, 246, 0.15);
+          color: #60a5fa;
+          font-weight: 500;
+        }
+        .sidebar-tree-node.disabled-node {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+        .sidebar-tree-node.disabled-node:hover {
+          background: transparent;
+        }
+        .tree-node-arrow {
+          display: inline-block;
+          width: 14px;
+          text-align: center;
+          margin-right: 4px;
+          font-size: 0.6rem;
+          color: var(--text-muted);
+        }
+        .tree-node-spacer {
+          display: inline-block;
+          width: 14px;
+          margin-right: 4px;
+        }
+        .tree-node-icon {
+          margin-right: 6px;
+          font-size: 0.8rem;
+        }
+        .tree-node-label {
+          flex-grow: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .sidebar-tree-children {
+          margin-left: 12px;
+          padding-left: 6px;
+          border-left: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .collection-gear-btn {
+          opacity: 0;
+          transition: opacity 0.1s;
+        }
+        .sidebar-tree-node:hover .collection-gear-btn {
+          opacity: 1;
+        }
+        .collection-dropdown-menu {
+          background: #1a1d27;
+          border: 1px solid var(--panel-border);
+          border-radius: 6px;
+          padding: 4px 0;
+          min-width: 180px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+        .dropdown-divider {
+          height: 1px;
+          background: var(--panel-border);
+          margin: 4px 0;
+        }
+        .dropdown-item-btn {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          background: none;
+          border: none;
+          color: #e2e8f0;
+          padding: 7px 12px;
+          font-size: 0.75rem;
+          cursor: pointer;
+          text-align: left;
+          transition: background 0.1s;
+        }
+        .dropdown-item-btn:hover {
+          background: rgba(255,255,255,0.06);
+        }
       `}</style>
 
       <div className="db-sidebar glass-panel" style={{ width: `${sidebarWidth}px`, flexShrink: 0 }}>
         <div className="db-sidebar-header">
           <div className="db-sidebar-title">MongoDB Explorer</div>
           
-          <div className="schema-select-wrapper" style={{ marginTop: '4px' }}>
-            <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Database</label>
-            <select 
-              value={activeDb} 
-              onChange={(e) => setActiveDb(e.target.value)}
-              style={{ width: '100%', padding: '6px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', borderRadius: '4px', color: '#fff', fontSize: '0.8rem', outline: 'none' }}
-            >
-              {databases.map(db => (
-                <option key={db} value={db}>{db}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+        {/* Database Select Dropdown Removed in favor of connection tree */}
+      </div>
 
-        <div className="db-sidebar-list" style={{ overflow: 'auto', flexGrow: 1, padding: '12px' }}>
-          
-          {/* Collections Collapsible Section */}
-          <div className="db-sidebar-section-header" onClick={() => setCollectionsCollapsed(!collectionsCollapsed)}>
-            <span>Collections ({collections.length})</span>
-            <span style={{ fontSize: '0.6rem' }}>{collectionsCollapsed ? '▶' : '▼'}</span>
+      <div className="db-sidebar-list" style={{ overflow: 'auto', flexGrow: 1, padding: '12px' }}>
+        
+        {/* Robo3T Connection Tree */}
+        <div className="bson-sidebar-tree">
+          {/* Connection Node */}
+          <div className="sidebar-tree-node connection-node" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <span className="tree-node-arrow">▼</span>
+              <span className="tree-node-icon">🔌</span>
+              <span className="tree-node-label" style={{ fontWeight: '600' }}>
+                {connection?.name || 'Local MongoDB'}
+              </span>
+            </div>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setCreateDbError(null); setNewDbName(''); setCreateDbModalOpen(true); }}
+              title="Create Database"
+              style={{
+                background: 'rgba(59,130,246,0.15)',
+                border: '1px solid rgba(59,130,246,0.3)',
+                color: '#60a5fa',
+                fontSize: '0.62rem',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+                transition: 'background 0.15s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.3)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.15)'}
+            >
+              <span>+</span> DB
+            </button>
           </div>
-          {!collectionsCollapsed && (
-            <div className="db-sidebar-list-inner" style={{ paddingLeft: '4px', marginTop: '4px' }}>
-              <div style={{ padding: '4px 6px 8px 6px' }}>
-                <input
-                  type="text"
-                  placeholder="Filter collections..."
-                  value={collectionSearch}
-                  onChange={e => setCollectionSearch(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '5px 8px',
-                    background: 'rgba(0,0,0,0.3)',
-                    border: '1px solid var(--panel-border)',
-                    borderRadius: '4px',
-                    color: '#fff',
-                    fontSize: '0.75rem',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-              {collections.filter(c => c.toLowerCase().includes(collectionSearch.toLowerCase())).map(c => (
-                <div key={c} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
-                  <button
-                    className={`db-list-item ${selectedItem.type === 'collection' && selectedItem.name === c ? 'active' : ''}`}
-                    onClick={() => openOrSelectTab('collection', c)}
-                    style={{ flex: 1, border: 'none', background: 'transparent', textAlign: 'left', paddingRight: '24px' }}
+          
+          {/* Databases under Connection */}
+          <div className="sidebar-tree-children">
+            {databases.map(db => {
+              const isDbActive = activeDb === db;
+              return (
+                <div key={db} className="sidebar-tree-node-wrapper">
+                  <div 
+                    className={`sidebar-tree-node db-node ${isDbActive ? 'active' : ''}`}
+                    onClick={() => {
+                      if (activeDb !== db) {
+                        setActiveDb(db);
+                      }
+                    }}
                   >
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                    <span>{c}</span>
-                  </button>
-                  {/* Settings gear icon */}
-                  <button
-                    onClick={e => { e.stopPropagation(); setCollectionMenuOpen(collectionMenuOpen === c ? null : c); }}
-                    title="Collection actions"
-                    style={{ position: 'absolute', right: '2px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '3px', borderRadius: '3px', display: 'flex', alignItems: 'center', opacity: collectionMenuOpen === c ? 1 : undefined }}
-                    className="table-gear-btn"
-                  >
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </button>
-                  {/* Dropdown menu */}
-                  {collectionMenuOpen === c && (
-                    <div
-                      style={{ position: 'absolute', right: 0, top: '100%', zIndex: 200, background: '#1a1d27', border: '1px solid var(--panel-border)', borderRadius: '6px', padding: '4px 0', minWidth: '180px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}
-                      onClick={e => e.stopPropagation()}
-                    >
-                      {[
-                        { id: 'indexes',       icon: '🗂', label: 'View Indexes' },
-                        { id: 'stats',         icon: '📊', label: 'Collection Stats' },
-                        { id: 'compact',       icon: '🧹', label: 'Compact Collection' },
-                        { id: 'reindex',       icon: '🔄', label: 'Reindex Collection' },
-                        null,
-                        { id: 'clone',         icon: '👯', label: 'Clone Collection' },
-                        { id: 'import_csv',    icon: '📥', label: 'Import CSV / Restore' },
-                      ].map((item, i) => item === null
-                        ? <div key={i} style={{ height: '1px', background: 'var(--panel-border)', margin: '4px 0' }} />
-                        : (
-                          <button key={item.id}
-                            onClick={() => handleCollectionAction(c, item.id)}
-                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', background: 'none', border: 'none', color: '#e2e8f0', padding: '7px 12px', fontSize: '0.75rem', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s' }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                    <span className="tree-node-arrow">{isDbActive ? '▼' : '▶'}</span>
+                    <span className="tree-node-icon">🗄️</span>
+                    <span className="tree-node-label">{db}</span>
+                  </div>
+                  
+                  {isDbActive && (
+                    <div className="sidebar-tree-children">
+                      {/* Collections Folder */}
+                      <div className="sidebar-tree-node-wrapper">
+                        <div 
+                          className="sidebar-tree-node folder-node"
+                          onClick={() => setCollectionsCollapsed(!collectionsCollapsed)}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingRight: '8px' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <span className="tree-node-arrow">{collectionsCollapsed ? '▶' : '▼'}</span>
+                            <span className="tree-node-icon">{collectionsCollapsed ? '📁' : '📂'}</span>
+                            <span className="tree-node-label">Collections ({collections.length})</span>
+                          </div>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setCreateColError(null); setNewColName(''); setCreateColModalOpen(true); }}
+                            title="Create Collection"
+                            style={{
+                              background: 'rgba(16,185,129,0.15)',
+                              border: '1px solid rgba(16,185,129,0.3)',
+                              color: '#10b981',
+                              fontSize: '0.62rem',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontWeight: 'bold',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              transition: 'background 0.15s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.3)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(16,185,129,0.15)'}
                           >
-                            <span>{item.icon}</span><span>{item.label}</span>
+                            <span>+</span> Col
                           </button>
-                        )
-                      )}
+                        </div>
+                        
+                        {!collectionsCollapsed && (
+                          <div className="sidebar-tree-children">
+                            <div style={{ padding: '2px 4px 6px 4px' }}>
+                              <input
+                                type="text"
+                                placeholder="Filter collections..."
+                                value={collectionSearch}
+                                onChange={e => setCollectionSearch(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '4px 6px',
+                                  background: 'rgba(0,0,0,0.3)',
+                                  border: '1px solid var(--panel-border)',
+                                  borderRadius: '4px',
+                                  color: '#fff',
+                                  fontSize: '0.7rem',
+                                  outline: 'none',
+                                  boxSizing: 'border-box'
+                                }}
+                              />
+                            </div>
+                            
+                            {collections.filter(c => c.toLowerCase().includes(collectionSearch.toLowerCase())).map(c => {
+                              const isColSelected = selectedItem.type === 'collection' && selectedItem.name === c;
+                              return (
+                                <div key={c} style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                  <div 
+                                    className={`sidebar-tree-node collection-node ${isColSelected ? 'active' : ''}`}
+                                    onClick={() => openOrSelectTab('collection', c)}
+                                  >
+                                    <span className="tree-node-spacer" />
+                                    <span className="tree-node-icon">📋</span>
+                                    <span className="tree-node-label">{c}</span>
+                                    
+                                    <button
+                                      onClick={e => { 
+                                        e.stopPropagation(); 
+                                        setCollectionMenuOpen(collectionMenuOpen === c ? null : c); 
+                                      }}
+                                      title="Collection actions"
+                                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                                      className="collection-gear-btn"
+                                    >
+                                      ⚙️
+                                    </button>
+                                  </div>
+                                  
+                                  {collectionMenuOpen === c && (
+                                    <div
+                                      className="collection-dropdown-menu"
+                                      style={{ position: 'absolute', left: '20px', top: '100%', zIndex: 200 }}
+                                      onClick={e => e.stopPropagation()}
+                                    >
+                                      {[
+                                        { id: 'indexes',       icon: '🗂️', label: 'View Indexes' },
+                                        { id: 'stats',         icon: '📊', label: 'Collection Stats' },
+                                        { id: 'compact',       icon: '🧹', label: 'Compact Collection' },
+                                        { id: 'reindex',       icon: '🔄', label: 'Reindex Collection' },
+                                        null,
+                                        { id: 'clone',         icon: '👯', label: 'Clone Collection' },
+                                        { id: 'import_csv',    icon: '📥', label: 'Import CSV / Restore' },
+                                      ].map((item, i) => item === null
+                                        ? <div key={i} className="dropdown-divider" />
+                                        : (
+                                          <button key={item.id}
+                                            onClick={() => handleCollectionAction(c, item.id)}
+                                            className="dropdown-item-btn"
+                                          >
+                                            <span className="mr-2">{item.icon}</span><span>{item.label}</span>
+                                          </button>
+                                        )
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* System nodes */}
+                      <div className="sidebar-tree-node folder-node disabled-node">
+                        <span className="tree-node-arrow">▶</span>
+                        <span className="tree-node-icon">📁</span>
+                        <span className="tree-node-label">System Collections (0)</span>
+                      </div>
+                      <div className="sidebar-tree-node folder-node disabled-node">
+                        <span className="tree-node-arrow">▶</span>
+                        <span className="tree-node-icon">📁</span>
+                        <span className="tree-node-label">Functions (0)</span>
+                      </div>
+                      <div className="sidebar-tree-node folder-node disabled-node">
+                        <span className="tree-node-arrow">▶</span>
+                        <span className="tree-node-icon">📁</span>
+                        <span className="tree-node-label">Users (0)</span>
+                      </div>
+                      <div className="sidebar-tree-node folder-node disabled-node">
+                        <span className="tree-node-arrow">▶</span>
+                        <span className="tree-node-icon">📁</span>
+                        <span className="tree-node-label">Roles (0)</span>
+                      </div>
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Saved Queries Collapsible Section */}
-          <div className="db-sidebar-section-header" onClick={() => setSavedQueriesCollapsed(!savedQueriesCollapsed)} style={{ marginTop: '12px' }}>
-            <span>Saved Queries ({savedQueries.length})</span>
-            <span style={{ fontSize: '0.6rem' }}>{savedQueriesCollapsed ? '▶' : '▼'}</span>
+              );
+            })}
           </div>
-          {!savedQueriesCollapsed && (
-            <div className="db-sidebar-list-inner" style={{ paddingLeft: '4px', marginTop: '4px' }}>
-              {savedQueries.map(q => (
-                <div key={q.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
-                  <button
-                    className="db-list-item"
-                    onClick={() => loadSavedQuery(q)}
-                    style={{ flex: 1, border: 'none', background: 'transparent', textAlign: 'left', paddingRight: '24px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}
-                    title={`Click to load:\n\n${q.query}`}
-                  >
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                    </svg>
-                    <span>{q.name}</span>
-                  </button>
-                  <button
-                    onClick={(e) => handleDeleteSavedQuery(q.id, e)}
-                    title="Delete saved query"
-                    style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
-                    onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                    onMouseLeave={e => e.currentTarget.style.opacity = 0.6}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              {savedQueries.length === 0 && (
-                <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                  No saved queries
-                </div>
-              )}
-            </div>
-          )}
+        </div>
+
+        {/* Saved Queries Section */}
+        <div className="db-sidebar-section-header" onClick={() => setSavedQueriesCollapsed(!savedQueriesCollapsed)} style={{ marginTop: '16px' }}>
+          <span>Saved Queries ({savedQueries.length})</span>
+          <span style={{ fontSize: '0.6rem' }}>{savedQueriesCollapsed ? '▶' : '▼'}</span>
+        </div>
+        {!savedQueriesCollapsed && (
+          <div className="db-sidebar-list-inner" style={{ paddingLeft: '4px', marginTop: '4px' }}>
+            {savedQueries.map(q => (
+              <div key={q.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
+                <button
+                  className="db-list-item"
+                  onClick={() => loadSavedQuery(q)}
+                  style={{ flex: 1, border: 'none', background: 'transparent', textAlign: 'left', paddingRight: '24px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}
+                  title={`Click to load:\n\n${q.query}`}
+                >
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                  <span>{q.name}</span>
+                </button>
+                <button
+                  onClick={(e) => handleDeleteSavedQuery(q.id, e)}
+                  title="Delete saved query"
+                  style={{ position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', opacity: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                  onMouseLeave={e => e.currentTarget.style.opacity = 0.6}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {savedQueries.length === 0 && (
+              <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                No saved queries
+              </div>
+            )}
+          </div>
+        )}
         </div>
 
         <div className="pg-config-info" style={{ padding: '12px', borderTop: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.1)' }}>
@@ -1899,22 +2607,41 @@ export function MongoDbView({ connection, tabId }) {
                   </div>
                 )}
 
-                {queryResults?.loading && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                    <span className="spinner-small"></span> Running...
-                  </div>
+                {queryResults?.loading ? (
+                  <button 
+                    className="cancel-query-btn" 
+                    onClick={handleCancelQuery} 
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '6px', 
+                      background: 'rgba(239, 68, 68, 0.2)', 
+                      border: '1px solid rgba(239, 68, 68, 0.5)', 
+                      color: '#ef4444', 
+                      padding: '6px 12px', 
+                      borderRadius: '4px', 
+                      fontSize: '0.75rem', 
+                      cursor: 'pointer', 
+                      fontWeight: '600' 
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+                      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                    </svg>
+                    Stop
+                  </button>
+                ) : (
+                  <button 
+                    className="run-query-btn" 
+                    onClick={runQuery} 
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--accent-primary)', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: '600' }}
+                  >
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                    Find
+                  </button>
                 )}
-                <button 
-                  className="run-query-btn" 
-                  onClick={runQuery} 
-                  disabled={queryResults?.loading}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: queryResults?.loading ? '#475569' : 'var(--accent-primary)', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: queryResults?.loading ? 'not-allowed' : 'pointer', fontWeight: '600' }}
-                >
-                  <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                  Find
-                </button>
                 {tabs.find(t => t.id === activeTabId)?.type === 'query' && (
                   <button 
                     className="save-query-btn" 
@@ -1940,6 +2667,12 @@ export function MongoDbView({ connection, tabId }) {
                   value={queryText}
                   onChange={(e) => setQueryText(e.target.value)}
                   onScroll={handleScroll}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      runQuery();
+                    }
+                  }}
                   placeholder='e.g. {"username": "alex_ops"}'
                 />
                 <div 
@@ -1968,8 +2701,42 @@ export function MongoDbView({ connection, tabId }) {
             {/* Results View Panel */}
             <div className="db-grid-container" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                <span>Documents {queryResults ? `(${selectedItem.type === 'collection' ? 'Collection' : 'Query'}: ${selectedItem.type === 'collection' ? selectedItem.name : activeQueryCollection})` : ''}</span>
+                <span>
+                  Documents {queryResults ? `(${selectedItem.type === 'collection' ? 'Collection' : 'Query'}: ${selectedItem.type === 'collection' ? selectedItem.name : activeQueryCollection})` : ''}
+                  {queryDuration !== null && (
+                    <span style={{ marginLeft: '12px', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '2px 6px', borderRadius: '3px', fontSize: '0.7rem' }}>
+                      Fetched {activeRows.length} records in {queryDuration}ms
+                    </span>
+                  )}
+                </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {/* Segmented View Mode Switcher */}
+                  <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', borderRadius: '4px', padding: '2px', marginRight: '6px' }}>
+                    {[
+                      { mode: 'tree', label: '🌳 Tree' },
+                      { mode: 'table', label: '📊 Table' },
+                      { mode: 'text', label: '📝 Text' }
+                    ].map(b => (
+                      <button
+                        key={b.mode}
+                        onClick={() => setViewMode(b.mode)}
+                        style={{
+                          background: viewMode === b.mode ? 'var(--accent-primary)' : 'transparent',
+                          border: 'none',
+                          color: viewMode === b.mode ? '#fff' : 'var(--text-muted)',
+                          padding: '3px 8px',
+                          borderRadius: '3px',
+                          fontSize: '0.68rem',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s, color 0.15s'
+                        }}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <span>{queryResults?.totalCount !== undefined ? `${queryResults.totalCount} total documents matching filter (loaded batch of ${activeRows.length})` : `${activeRows.length} documents found`}</span>
                   {activeCols.length > 0 && !newRow && (
                     <button
@@ -1980,9 +2747,9 @@ export function MongoDbView({ connection, tabId }) {
                       Insert Doc
                     </button>
                   )}
-                  {selectedRows.size > 0 && (
+                  {selectedRows.size > 0 && viewMode === 'table' && (
                     <button
-                      onClick={handleDeleteSelectedRows}
+                      onClick={() => handleDeleteSelectedRows()}
                       disabled={isDeletingRows}
                       style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#f87171', padding: '5px 10px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer' }}
                     >
@@ -1992,7 +2759,7 @@ export function MongoDbView({ connection, tabId }) {
                       Delete {selectedRows.size} Doc{selectedRows.size > 1 ? 's' : ''}
                     </button>
                   )}
-                  {pendingEdits.length > 0 && (
+                  {pendingEdits.length > 0 && viewMode === 'table' && (
                     <button
                       onClick={handleSaveEdits}
                       disabled={isSavingEdits}
@@ -2005,7 +2772,7 @@ export function MongoDbView({ connection, tabId }) {
                     </button>
                   )}
                   {totalRows > 0 && (
-                    <button className="csv-export-btn" onClick={handleExportCsv} disabled={isExporting}>
+                    <button className="csv-export-btn" onClick={handleExportJson} disabled={isExporting}>
                       {isExporting ? (
                         <span className="spinner-small" style={{ borderColor: 'var(--text-muted)', borderTopColor: 'var(--accent)', width: '10px', height: '10px', marginRight: '6px' }}></span>
                       ) : (
@@ -2013,7 +2780,7 @@ export function MongoDbView({ connection, tabId }) {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                         </svg>
                       )}
-                      {isExporting ? 'Exporting...' : 'Export CSV'}
+                      {isExporting ? 'Exporting...' : 'Export JSON'}
                     </button>
                   )}
                 </div>
@@ -2036,136 +2803,198 @@ export function MongoDbView({ connection, tabId }) {
               )}
 
               <div style={{ overflow: 'auto', background: 'rgba(0,0,0,0.1)', borderRadius: '6px', border: '1px solid var(--panel-border)', flexGrow: 1 }}>
-                <table className="db-results-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '32px', padding: '6px 8px', textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          style={{ cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
-                          checked={paginatedRows.length > 0 && paginatedRows.every((_, pi) => selectedRows.has(startIndex + pi))}
-                          onChange={() => toggleAllRows(paginatedRows.map((_, pi) => startIndex + pi))}
-                          title="Select all on this page"
-                        />
-                      </th>
-                      <th style={{ width: '80px', textAlign: 'center' }}>Actions</th>
-                      {activeCols.map(col => (
-                        <th key={col}>{col}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {queryResults?.loading ? (
+                {viewMode === 'tree' ? (
+                  queryResults?.loading ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: 'var(--text-muted)', padding: '40px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="spinner-small" style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-primary)' }}></span>
+                        <span>Querying documents...</span>
+                      </div>
+                      <button 
+                        onClick={handleCancelQuery}
+                        style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '4px 10px', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer' }}
+                      >
+                        Cancel Query
+                      </button>
+                    </div>
+                  ) : paginatedRows.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px' }}>
+                      No documents returned or collection is empty.
+                    </div>
+                  ) : (
+                    <BsonTreeView 
+                      documents={paginatedRows} 
+                      onEdit={(doc, idx) => {
+                        setSelectedDocForJson(doc);
+                        setJsonDocText(JSON.stringify(doc, null, 2));
+                        setJsonModalError(null);
+                        setIsJsonModalOpen(true);
+                      }}
+                      onDelete={(absIdx) => handleDeleteSelectedRows(absIdx)}
+                      startIndex={startIndex}
+                    />
+                  )
+                ) : viewMode === 'text' ? (
+                  queryResults?.loading ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: 'var(--text-muted)', padding: '40px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="spinner-small" style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-primary)' }}></span>
+                        <span>Querying documents...</span>
+                      </div>
+                      <button 
+                        onClick={handleCancelQuery}
+                        style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '4px 10px', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer' }}
+                      >
+                        Cancel Query
+                      </button>
+                    </div>
+                  ) : paginatedRows.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px' }}>
+                      No documents returned or collection is empty.
+                    </div>
+                  ) : (
+                    <RawTextView documents={paginatedRows} />
+                  )
+                ) : (
+                  <table className="db-results-table">
+                    <thead>
                       <tr>
-                        <td colSpan={activeCols.length + 2 || 2} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                            <span className="spinner-small" style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-primary)' }}></span>
-                            <span>Querying documents...</span>
-                          </div>
-                        </td>
+                        <th style={{ width: '32px', padding: '6px 8px', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            style={{ cursor: 'pointer', accentColor: 'var(--accent-primary)' }}
+                            checked={paginatedRows.length > 0 && paginatedRows.every((_, pi) => selectedRows.has(startIndex + pi))}
+                            onChange={() => toggleAllRows(paginatedRows.map((_, pi) => startIndex + pi))}
+                            title="Select all on this page"
+                          />
+                        </th>
+                        <th style={{ width: '80px', textAlign: 'center' }}>Actions</th>
+                        {activeCols.map(col => (
+                          <th key={col}>{col}</th>
+                        ))}
                       </tr>
-                    ) : paginatedRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={activeCols.length + 2 || 2} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>
-                          No documents returned or collection is empty.
-                        </td>
-                      </tr>
-                    ) : (
-                      paginatedRows.map((row, pageIdx) => {
-                        const absoluteIdx = startIndex + pageIdx;
-                        return (
-                          <tr
-                            key={row._id || absoluteIdx}
-                            style={{
-                              background: selectedRows.has(absoluteIdx)
-                                ? 'rgba(239,68,68,0.08)'
-                                : pendingEdits.some(e => e.rowIdx === absoluteIdx)
-                                  ? 'rgba(251,191,36,0.05)'
-                                  : undefined
-                            }}
-                          >
-                            <td style={{ width: '32px', padding: '6px 8px', textAlign: 'center' }}>
-                              <input
-                                type="checkbox"
-                                checked={selectedRows.has(absoluteIdx)}
-                                onChange={() => toggleRowSelection(absoluteIdx)}
-                                style={{ cursor: 'pointer', accentColor: '#f87171' }}
-                              />
-                            </td>
-                            <td style={{ width: '80px', padding: '6px 8px', textAlign: 'center' }}>
-                              <button
-                                onClick={() => {
-                                  setSelectedDocForJson(row);
-                                  setJsonDocText(JSON.stringify(row, null, 2));
-                                  setJsonModalError(null);
-                                  setIsJsonModalOpen(true);
-                                }}
-                                title="View/Edit JSON"
-                                style={{
-                                  background: 'rgba(59,130,246,0.15)',
-                                  border: '1px solid rgba(59,130,246,0.4)',
-                                  color: '#60a5fa',
-                                  padding: '3px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.68rem',
-                                  fontWeight: '600',
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
+                    </thead>
+                    <tbody>
+                      {queryResults?.loading ? (
+                        <tr>
+                          <td colSpan={activeCols.length + 2 || 2} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '30px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span className="spinner-small" style={{ borderColor: 'rgba(255,255,255,0.1)', borderTopColor: 'var(--accent-primary)' }}></span>
+                                <span>Querying documents...</span>
+                              </div>
+                              <button 
+                                onClick={handleCancelQuery}
+                                style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '4px 10px', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer' }}
                               >
-                                <span>JSON</span>
+                                Cancel Query
                               </button>
-                            </td>
-                            {activeCols.map(col => {
-                              const isEditing = editingCell?.rowIdx === absoluteIdx && editingCell?.col === col;
-                              const hasPendingEdit = pendingEdits.some(e => e.rowIdx === absoluteIdx && e.col === col);
-                              const displayVal = row[col] === null || row[col] === undefined 
-                                ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>null</span> 
-                                : (typeof row[col] === 'object' ? JSON.stringify(row[col]) : String(row[col]));
-                              
-                              return (
-                                <td
-                                  key={col}
-                                  onDoubleClick={() => handleCellDoubleClick(absoluteIdx, col, row[col])}
-                                  style={{
-                                    cursor: 'pointer',
-                                    background: hasPendingEdit ? 'rgba(251,191,36,0.08)' : undefined,
-                                    outline: isEditing ? '2px solid var(--accent-primary)' : undefined,
-                                    padding: isEditing ? '0' : undefined,
-                                    position: 'relative'
+                            </div>
+                          </td>
+                        </tr>
+                      ) : paginatedRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={activeCols.length + 2 || 2} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>
+                            No documents returned or collection is empty.
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedRows.map((row, pageIdx) => {
+                          const absoluteIdx = startIndex + pageIdx;
+                          return (
+                            <tr
+                              key={row._id || absoluteIdx}
+                              style={{
+                                background: selectedRows.has(absoluteIdx)
+                                  ? 'rgba(239,68,68,0.08)'
+                                  : pendingEdits.some(e => e.rowIdx === absoluteIdx)
+                                    ? 'rgba(251,191,36,0.05)'
+                                    : undefined
+                              }}
+                            >
+                              <td style={{ width: '32px', padding: '6px 8px', textAlign: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedRows.has(absoluteIdx)}
+                                  onChange={() => toggleRowSelection(absoluteIdx)}
+                                  style={{ cursor: 'pointer', accentColor: '#f87171' }}
+                                />
+                              </td>
+                              <td style={{ width: '80px', padding: '6px 8px', textAlign: 'center' }}>
+                                <button
+                                  onClick={() => {
+                                    setSelectedDocForJson(row);
+                                    setJsonDocText(JSON.stringify(row, null, 2));
+                                    setJsonModalError(null);
+                                    setIsJsonModalOpen(true);
                                   }}
-                                  title="Double-click to edit"
+                                  title="View/Edit JSON"
+                                  style={{
+                                    background: 'rgba(59,130,246,0.15)',
+                                    border: '1px solid rgba(59,130,246,0.4)',
+                                    color: '#60a5fa',
+                                    padding: '3px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.68rem',
+                                    fontWeight: '600',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
                                 >
-                                  {isEditing ? (
-                                    <input
-                                      autoFocus
-                                      value={editingValue}
-                                      onChange={e => setEditingValue(e.target.value)}
-                                      onBlur={() => commitCellEdit(row, absoluteIdx, col)}
-                                      onKeyDown={e => {
-                                        if (e.key === 'Enter') commitCellEdit(row, absoluteIdx, col);
-                                        if (e.key === 'Escape') setEditingCell(null);
-                                      }}
-                                      style={{
-                                        width: '100%', background: '#1a1d27', color: '#fff',
-                                        border: 'none', outline: 'none', padding: '6px 8px',
-                                        fontFamily: 'inherit', fontSize: 'inherit', boxSizing: 'border-box'
-                                      }}
-                                    />
-                                  ) : (
-                                    displayVal
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                                  <span>JSON</span>
+                                </button>
+                              </td>
+                              {activeCols.map(col => {
+                                const isEditing = editingCell?.rowIdx === absoluteIdx && editingCell?.col === col;
+                                const hasPendingEdit = pendingEdits.some(e => e.rowIdx === absoluteIdx && e.col === col);
+                                const displayVal = row[col] === null || row[col] === undefined 
+                                  ? <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>null</span> 
+                                  : (typeof row[col] === 'object' ? JSON.stringify(row[col]) : String(row[col]));
+                                
+                                return (
+                                  <td
+                                    key={col}
+                                    onDoubleClick={() => handleCellDoubleClick(absoluteIdx, col, row[col])}
+                                    style={{
+                                      cursor: 'pointer',
+                                      background: hasPendingEdit ? 'rgba(251,191,36,0.08)' : undefined,
+                                      outline: isEditing ? '2px solid var(--accent-primary)' : undefined,
+                                      padding: isEditing ? '0' : undefined,
+                                      position: 'relative'
+                                    }}
+                                    title="Double-click to edit"
+                                  >
+                                    {isEditing ? (
+                                      <input
+                                        autoFocus
+                                        value={editingValue}
+                                        onChange={e => setEditingValue(e.target.value)}
+                                        onBlur={() => commitCellEdit(row, absoluteIdx, col)}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter') commitCellEdit(row, absoluteIdx, col);
+                                          if (e.key === 'Escape') setEditingCell(null);
+                                        }}
+                                        style={{
+                                          width: '100%', background: '#1a1d27', color: '#fff',
+                                          border: 'none', outline: 'none', padding: '6px 8px',
+                                          fontFamily: 'inherit', fontSize: 'inherit', boxSizing: 'border-box'
+                                        }}
+                                      />
+                                    ) : (
+                                      displayVal
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
 
               {/* New Document Editor Panel */}
@@ -2837,6 +3666,203 @@ export function MongoDbView({ connection, tabId }) {
               >
                 {csvImportModal.importing && <span className="spinner-small"></span>}
                 <span>Import Data</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Create Database Modal */}
+      {createDbModalOpen && (
+        <div 
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+          onClick={() => { if (!isCreatingDb) setCreateDbModalOpen(false); }}
+        >
+          <div className="glass-panel" style={{
+            background: '#1a1d27',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '8px',
+            width: '100%',
+            maxWidth: '400px',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '20px',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.6)',
+            boxSizing: 'border-box'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#fff' }}>Create New Database</div>
+              <button 
+                onClick={() => setCreateDbModalOpen(false)}
+                disabled={isCreatingDb}
+                style={{ background: 'none', border: 'none', color: isCreatingDb ? '#475569' : 'var(--text-muted)', fontSize: '1rem', cursor: isCreatingDb ? 'not-allowed' : 'pointer', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {createDbError && (
+              <div style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '4px', marginBottom: '12px' }}>
+                {createDbError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+              <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '600' }}>Database Name</label>
+              <input
+                type="text"
+                placeholder="e.g. orders_db"
+                value={newDbName}
+                onChange={e => setNewDbName(e.target.value)}
+                disabled={isCreatingDb}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !isCreatingDb && newDbName.trim()) {
+                    handleCreateDatabase();
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  background: '#121216',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: '4px',
+                  color: '#e2e8f0',
+                  fontSize: '0.8rem',
+                  padding: '8px 10px',
+                  boxSizing: 'border-box',
+                  outline: 'none'
+                }}
+                autoFocus
+              />
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                Note: In MongoDB, a database is initialized by creating its first collection. An initial 'init' collection will be automatically created.
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                onClick={() => setCreateDbModalOpen(false)}
+                disabled={isCreatingDb}
+                style={{ background: 'none', border: '1px solid var(--panel-border)', color: 'var(--text-muted)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: isCreatingDb ? 'not-allowed' : 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateDatabase}
+                disabled={isCreatingDb || !newDbName.trim()}
+                style={{
+                  background: 'var(--accent-primary)',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '6px 16px',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  cursor: (isCreatingDb || !newDbName.trim()) ? 'not-allowed' : 'pointer',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {isCreatingDb && <span className="spinner-small"></span>}
+                <span>Create Database</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Collection Modal */}
+      {createColModalOpen && (
+        <div 
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+          onClick={() => { if (!isCreatingCol) setCreateColModalOpen(false); }}
+        >
+          <div className="glass-panel" style={{
+            background: '#1a1d27',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '8px',
+            width: '100%',
+            maxWidth: '400px',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '20px',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.6)',
+            boxSizing: 'border-box'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#fff' }}>Create New Collection</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Database: <span style={{ color: 'var(--accent)' }}>{activeDb}</span></div>
+              </div>
+              <button 
+                onClick={() => setCreateColModalOpen(false)}
+                disabled={isCreatingCol}
+                style={{ background: 'none', border: 'none', color: isCreatingCol ? '#475569' : 'var(--text-muted)', fontSize: '1rem', cursor: isCreatingCol ? 'not-allowed' : 'pointer', padding: '4px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {createColError && (
+              <div style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '4px', marginBottom: '12px' }}>
+                {createColError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+              <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '600' }}>Collection Name</label>
+              <input
+                type="text"
+                placeholder="e.g. users"
+                value={newColName}
+                onChange={e => setNewColName(e.target.value)}
+                disabled={isCreatingCol}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !isCreatingCol && newColName.trim()) {
+                    handleCreateCollection();
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  background: '#121216',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: '4px',
+                  color: '#e2e8f0',
+                  fontSize: '0.8rem',
+                  padding: '8px 10px',
+                  boxSizing: 'border-box',
+                  outline: 'none'
+                }}
+                autoFocus
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                onClick={() => setCreateColModalOpen(false)}
+                disabled={isCreatingCol}
+                style={{ background: 'none', border: '1px solid var(--panel-border)', color: 'var(--text-muted)', padding: '6px 12px', borderRadius: '4px', fontSize: '0.75rem', cursor: isCreatingCol ? 'not-allowed' : 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateCollection}
+                disabled={isCreatingCol || !newColName.trim()}
+                style={{
+                  background: 'var(--accent-primary)',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '6px 16px',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  cursor: (isCreatingCol || !newColName.trim()) ? 'not-allowed' : 'pointer',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {isCreatingCol && <span className="spinner-small"></span>}
+                <span>Create Collection</span>
               </button>
             </div>
           </div>
