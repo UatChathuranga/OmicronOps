@@ -1994,9 +1994,9 @@ export default function App() {
             <div className="about-version">Version {version}</div>
             
             <p className="about-description">
-              A premium, lightweight, glassmorphic desktop SSH & SFTP client for Linux. 
-              {productName} provides a tabbed interactive shell terminal alongside a standard 
-              file manager for secure transfers with real-time progress indicators.
+              A premium, lightweight, glassmorphic desktop DevOps and remote management client for Linux. 
+              {productName} provides tabbed interactive shell terminals, SFTP file managers, robust database managers 
+              for PostgreSQL, MongoDB, and Redis, and real-time statistics monitoring for HAProxy and RabbitMQ.
             </p>
             
             <div className="about-meta-grid">
@@ -2005,6 +2005,14 @@ export default function App() {
                 <span className="about-meta-value">
                   <a href="https://github.com/UatChathuranga" target="_blank" rel="noopener noreferrer">
                     @UatChathuranga
+                  </a>
+                </span>
+              </div>
+              <div className="about-meta-row">
+                <span className="about-meta-label">Website</span>
+                <span className="about-meta-value">
+                  <a href="https://www.amzcord.com" target="_blank" rel="noopener noreferrer">
+                    www.amzcord.com
                   </a>
                 </span>
               </div>

@@ -1,6 +1,6 @@
 # OmicronOps
 
-OmicronOps is a premium, lightweight, glassmorphic desktop DevOps & remote management client built on Electron and React. Designed to bring a modern terminal experience and WinSCP-like visual file explorer to Linux desktops.
+OmicronOps is a premium, lightweight, glassmorphic desktop DevOps, remote management, and database client built on Electron and React. Designed to bring a modern terminal experience, visual file explorers, database managers, and system monitors to Linux desktops.
 
 ![OmicronOps App Icon](build/icon.png)
 
@@ -26,6 +26,10 @@ OmicronOps is a premium, lightweight, glassmorphic desktop DevOps & remote manag
   * Tree-structured database schema, tables, and views explorer.
   * Full data table browsing with sorting, filtering, and server-side pagination.
   * Custom SQL Query Execution Console with interactive, tabular result sets.
+* **MongoDB Document Client**:
+  * Tree-structured database, collection, and document explorer with UI-driven database and collection creation.
+  * Real-time document querying, updates, deletion, and insertion.
+  * Advanced query execution with built-in query cancellation support (via `AbortController`) for long-running operations.
 * **Redis Client Browser**:
   * Namespace-delimited hierarchical key explorer tree view.
   * Collapsible Interactive CLI Terminal with stderr security warnings filtration.
@@ -110,6 +114,7 @@ To package OmicronOps for distribution to other Linux systems:
 │   ├── HaProxyClientTab.jsx # HAProxy statistics & server toggle controls
 │   ├── RabbitMqClientTab.jsx # RabbitMQ queues & exchange monitoring
 │   ├── PostgresClientTab.jsx # PostgreSQL schema explorer & SQL client
+│   ├── MongoClientTab.jsx # MongoDB database explorer, collection manager, & query canceler
 │   ├── RedisClientTab.jsx  # Redis namespace browser, CLI terminal, and server stats
 │   ├── App.css            # Styles and color variables
 │   └── main.jsx           # App entry point

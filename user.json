@@ -1,0 +1,2874 @@
+{
+  "_id": "6a4367092406979063a78a8e",
+  "active": true,
+  "verified": true,
+  "allowed_file_categories": [
+    "CONVERSATIONS",
+    "IVR",
+    "HOLDMUSIC",
+    "CONVERSATION",
+    "IVRCLIPS",
+    "REPORTS"
+  ],
+  "multi_login": true,
+  "joined": {},
+  "user": "dominos@facetone.com",
+  "userref": "6a4367092406977329a78a89",
+  "tenant": 1,
+  "company": 19,
+  "user_meta": {
+    "role": "admin"
+  },
+  "user_scopes": [
+    {
+      "scope": "organisation",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "resource",
+      "read": true
+    },
+    {
+      "scope": "package",
+      "read": true
+    },
+    {
+      "scope": "console",
+      "read": true
+    },
+    {
+      "scope": "myNavigation",
+      "read": true
+    },
+    {
+      "scope": "myUserProfile",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "wallet",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "ardsrequest",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "requestmeta",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "queue",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "requestserver",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "attribute",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "group",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "ardsresource",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "resourcetaskattribute",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "task",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "productivity",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "Shared",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "taskinfo",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "sipuser",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "user",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "userProfile",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "userScope",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "userAppScope",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "userMeta",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "userAppMeta",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "client",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "clientScope",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "cdr",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "sysmonitoring",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "dashboardevent",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "dashboardgraph",
+      "read": true
+    },
+    {
+      "scope": "breaktype",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "appreg",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "fileservice",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "audittrail",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "autoattendance",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "Dispatch",
+      "write": true,
+      "read": true
+    },
+    {
+      "scope": "campaign",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "campaigncallbackreason",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "campaigndnc",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "campaignnumbers",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "CampaignSchedule",
+      "read": true
+    },
+    {
+      "scope": "tag",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "externalUser",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "Operations",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "dialer",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "schedule",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "ticket",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "tickettypes",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "ticketstatusflow",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "template",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "context",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "enduser",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "cluster",
+      "read": true
+    },
+    {
+      "scope": "conference",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "extension",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "csat",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "number",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "forms",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "social",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "queuemusic",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "events",
+      "read": true
+    },
+    {
+      "scope": "limit",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "trunk",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "trunkoperator",
+      "read": true
+    },
+    {
+      "scope": "callrule",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "voxbone",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "twilio",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "contact",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "notice",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "notification",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "userGroup",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "pbxadmin",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "pbxuser",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "qualityassurance",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "appointment",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "ticketview",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "sla",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "triggers",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "timer",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "todo",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "remind",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "agentDialer",
+      "read": true,
+      "write": true
+    },
+    {
+      "scope": "campaignconfiguration",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "integration",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "userfilecategory",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "sms",
+      "read": true
+    },
+    {
+      "scope": "article",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "engagement",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "inbox",
+      "read": true,
+      "write": true,
+      "delete": true
+    },
+    {
+      "scope": "AgentConsoleMenu",
+      "read": true
+    },
+    {
+      "scope": "SoftPhone",
+      "read": true
+    },
+    {
+      "scope": "SoftPhone_dialer",
+      "read": true
+    },
+    {
+      "scope": "crm",
+      "read": true,
+      "write": true,
+      "delete": true
+    }
+  ],
+  "created_at": {},
+  "updated_at": {},
+  "client_scopes": [
+    {
+      "_id": "6a436709240697cf35a78ad4",
+      "consoleName": "SUPERVISOR_CONSOLE",
+      "menus": [
+        {
+          "_id": "6a436787e2b6775b5c93c30c",
+          "menuItem": "ACWREPORT",
+          "menuAction": [
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource api access",
+              "read": true
+            },
+            {
+              "scope": "cdr",
+              "feature": "cdr access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677f61f93c30d",
+          "menuItem": "AGENT_DASHBOARD",
+          "menuAction": [
+            {
+              "scope": "sysmonitoring",
+              "feature": "sysmonitoring access",
+              "read": true
+            },
+            {
+              "scope": "dashboardevent",
+              "feature": "dashboardevent access",
+              "read": true
+            },
+            {
+              "scope": "dashboardgraph",
+              "feature": "dashboardgraph access",
+              "read": true
+            },
+            {
+              "scope": "task",
+              "feature": "task access",
+              "read": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6778ccf93c30e",
+          "menuItem": "AGENT_PRODUCTIVITY",
+          "menuAction": [
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource configuration access",
+              "read": true
+            },
+            {
+              "scope": "productivity",
+              "feature": "productivity configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677806b93c30f",
+          "menuItem": "AGENT_PRODUCTIVITY_SUMMARY_REPORT",
+          "menuAction": [
+            {
+              "scope": "productivity",
+              "feature": "productivity access",
+              "read": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67733ac93c310",
+          "menuItem": "AGENT_SUMMARY",
+          "menuAction": [
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6772db293c311",
+          "menuItem": "AGENTSTATUSEVENT",
+          "menuAction": [
+            {
+              "scope": "cdr",
+              "feature": "cdr access",
+              "read": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource access",
+              "read": true
+            },
+            {
+              "scope": "breaktype",
+              "feature": "breaktype access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677118c93c312",
+          "menuItem": "APPLICATIONS",
+          "menuAction": [
+            {
+              "scope": "appreg",
+              "feature": "appreg configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "fileservice",
+              "feature": "fileservice configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677ac8f93c313",
+          "menuItem": "ARDS_CONFIGURATION",
+          "menuAction": [
+            {
+              "scope": "requestmeta",
+              "feature": "requestmeta configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "requestserver",
+              "feature": "requestserver configuration access",
+              "read": true
+            },
+            {
+              "scope": "group",
+              "feature": "group configuration access",
+              "read": true
+            },
+            {
+              "scope": "task",
+              "feature": "task configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67708b993c314",
+          "menuItem": "ATTRIBUTES",
+          "menuAction": [
+            {
+              "scope": "attribute",
+              "feature": "attribute configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "group",
+              "feature": "group configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677afe393c315",
+          "menuItem": "AUDITTRAIL",
+          "menuAction": [
+            {
+              "scope": "audittrail",
+              "feature": "audittrail access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67725d393c316",
+          "menuItem": "AUTOATTENDANCE",
+          "menuAction": [
+            {
+              "scope": "autoattendance",
+              "feature": "autoattendance configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677dd5893c317",
+          "menuItem": "BILLING_HISTORY",
+          "menuAction": [
+            {
+              "scope": "wallet",
+              "feature": "wallet access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677459793c318",
+          "menuItem": "CALL_MONITOR",
+          "menuAction": [
+            {
+              "scope": "sysmonitoring",
+              "feature": "sysmonitoring configuration access",
+              "read": true
+            },
+            {
+              "scope": "Dispatch",
+              "feature": "Dispatch configuration access",
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677f81d93c319",
+          "menuItem": "CALL_SUMMARY_REPORT",
+          "menuAction": [
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true
+            },
+            {
+              "scope": "cdr",
+              "feature": "cdr access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6775e5d93c31a",
+          "menuItem": "CALLCENTER_PERFORMANCE",
+          "menuAction": [
+            {
+              "scope": "dashboardevent",
+              "feature": "dashboardevent api access",
+              "read": true
+            },
+            {
+              "scope": "sysmonitoring",
+              "feature": "sysmonitoring configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677841e93c31b",
+          "menuItem": "CAMPAIGN_ATTEMPT_REPORT",
+          "menuAction": [
+            {
+              "scope": "campaign",
+              "feature": "campaign access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6777cf993c31c",
+          "menuItem": "CAMPAIGN_CALLBACK_REPORT",
+          "menuAction": [
+            {
+              "scope": "campaign",
+              "feature": "campaign access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67748ea93c31d",
+          "menuItem": "CAMPAIGN_DISPOSITION_REPORT",
+          "menuAction": [
+            {
+              "scope": "campaign",
+              "feature": "campaign access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "campaigncallbackreason",
+              "feature": "campaigncallbackreason access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677de9893c31e",
+          "menuItem": "CAMPAIGN_DNCLIST",
+          "menuAction": [
+            {
+              "scope": "campaigndnc",
+              "feature": "campaigndnc access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "campaign",
+              "feature": "campaign api access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "campaignnumbers",
+              "feature": "campaignnumbers access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "CampaignSchedule",
+              "feature": "CampaignSchedule access",
+              "read": true
+            },
+            {
+              "scope": "tag",
+              "feature": "tag api access",
+              "read": true
+            },
+            {
+              "scope": "externalUser",
+              "feature": "externalUser api access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6771d3f93c31f",
+          "menuItem": "CAMPAIGN_MONITOR",
+          "menuAction": [
+            {
+              "scope": "Operations",
+              "feature": "Operations access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "campaign",
+              "feature": "campaign access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "dialer",
+              "feature": "dialer access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677b3d193c320",
+          "menuItem": "CAMPAIGN_NUMBER_BASE",
+          "menuAction": [
+            {
+              "scope": "campaignnumbers",
+              "feature": "campaignnumbers access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "campaign",
+              "feature": "campaign access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "externalUser",
+              "feature": "externalUser access",
+              "read": true
+            },
+            {
+              "scope": "tag",
+              "feature": "tag access",
+              "read": true
+            },
+            {
+              "scope": "schedule",
+              "feature": "schedule access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67730e293c321",
+          "menuItem": "CAMPAIGN_SUMMARY_REPORT",
+          "menuAction": [
+            {
+              "scope": "campaign",
+              "feature": "campaign access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677cb7693c322",
+          "menuItem": "CASE_CONFIGURATION",
+          "menuAction": [
+            {
+              "scope": "ticket",
+              "feature": "ticket access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "tickettypes",
+              "feature": "tickettypes access",
+              "read": true
+            },
+            {
+              "scope": "tag",
+              "feature": "tag access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677e2f893c323",
+          "menuItem": "CASES",
+          "menuAction": [
+            {
+              "scope": "ticket",
+              "feature": "ticket access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "tag",
+              "feature": "tag access",
+              "read": true
+            },
+            {
+              "scope": "ticketstatusflow",
+              "feature": "ticketstatusflow access",
+              "read": true
+            },
+            {
+              "scope": "template",
+              "feature": "template access",
+              "read": true
+            },
+            {
+              "scope": "externalUser",
+              "feature": "externalUser access",
+              "read": true
+            },
+            {
+              "scope": "user",
+              "feature": "user access",
+              "read": true
+            },
+            {
+              "scope": "requestmeta",
+              "feature": "requestmeta access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677053693c324",
+          "menuItem": "CDR",
+          "menuAction": [
+            {
+              "scope": "cdr",
+              "feature": "cdr configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677a50d93c325",
+          "menuItem": "COMPANY_CONFIGURATION",
+          "menuAction": [
+            {
+              "scope": "context",
+              "feature": "context configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "enduser",
+              "feature": "enduser configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "cluster",
+              "feature": "cluster configuration access",
+              "read": true
+            },
+            {
+              "scope": "breaktype",
+              "feature": "breaktype access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "tickettypes",
+              "feature": "tickettypes configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "ticketstatusflow",
+              "feature": "ticketstatusflow configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677927493c326",
+          "menuItem": "CONFERENCE",
+          "menuAction": [
+            {
+              "scope": "conference",
+              "feature": "conference access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "extension",
+              "feature": "extension access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677313893c327",
+          "menuItem": "CREDIT_MANAGER",
+          "menuAction": [
+            {
+              "scope": "wallet",
+              "feature": "wallet access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6777ec093c328",
+          "menuItem": "CSATREPORT",
+          "menuAction": [
+            {
+              "scope": "csat",
+              "feature": "csat api access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677f72193c329",
+          "menuItem": "DASHBOARD",
+          "menuAction": [
+            {
+              "scope": "dashboardevent",
+              "feature": "dashboardevent configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "dashboardgraph",
+              "feature": "dashboardgraph configuration access",
+              "read": true
+            },
+            {
+              "scope": "sysmonitoring",
+              "feature": "sysmonitoring configuration access",
+              "read": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677139393c32a",
+          "menuItem": "DID",
+          "menuAction": [
+            {
+              "scope": "number",
+              "feature": "number configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "extension",
+              "feature": "extension configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677b7d693c32b",
+          "menuItem": "DYNAMICFORM",
+          "menuAction": [
+            {
+              "scope": "forms",
+              "feature": "forms configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677bc9793c32c",
+          "menuItem": "EMAIL",
+          "menuAction": [
+            {
+              "scope": "social",
+              "feature": "social access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "tag",
+              "feature": "tag access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67720c893c32d",
+          "menuItem": "EXTENSION",
+          "menuAction": [
+            {
+              "scope": "extension",
+              "feature": "extension configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677cc2193c32e",
+          "menuItem": "FACEBOOK",
+          "menuAction": [
+            {
+              "scope": "social",
+              "feature": "socials configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6773e6b93c32f",
+          "menuItem": "FILE_GALLERY",
+          "menuAction": [
+            {
+              "scope": "fileservice",
+              "feature": "fileservice configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6773fb093c330",
+          "menuItem": "FILE_UPLOAD",
+          "menuAction": [
+            {
+              "scope": "fileservice",
+              "feature": "fileservice configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6777cfc93c331",
+          "menuItem": "HOLD_MUSIC",
+          "menuAction": [
+            {
+              "scope": "queuemusic",
+              "feature": "queuemusic configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "fileservice",
+              "feature": "fileservice configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6776f8393c332",
+          "menuItem": "IVR_NODE_COUNT_REPORT",
+          "menuAction": [
+            {
+              "scope": "appreg",
+              "feature": "appreg access",
+              "read": true
+            },
+            {
+              "scope": "events",
+              "feature": "events access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677503593c333",
+          "menuItem": "LimitHandler",
+          "menuAction": [
+            {
+              "scope": "limit",
+              "feature": "limit configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677037893c334",
+          "menuItem": "MISSEDCALLREPORT",
+          "menuAction": [
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource api access",
+              "read": true
+            },
+            {
+              "scope": "cdr",
+              "feature": "cdr access",
+              "read": true
+            },
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677892e93c335",
+          "menuItem": "MY_NUMBERS",
+          "menuAction": [
+            {
+              "scope": "number",
+              "feature": "number configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "trunk",
+              "feature": "trunk configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "trunkoperator",
+              "feature": "trunkoperator access",
+              "read": true
+            },
+            {
+              "scope": "limit",
+              "feature": "limit configuration access",
+              "read": true
+            },
+            {
+              "scope": "callrule",
+              "feature": "callrule configuration access",
+              "read": true
+            },
+            {
+              "scope": "voxbone",
+              "feature": "voxbone api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "twilio",
+              "feature": "twilio api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677869d93c336",
+          "menuItem": "MYPROFILE",
+          "menuAction": [
+            {
+              "scope": "myUserProfile",
+              "feature": "myUserProfile access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "sipuser",
+              "feature": "sipuser configuration access",
+              "read": true
+            },
+            {
+              "scope": "contact",
+              "feature": "contact api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677733893c337",
+          "menuItem": "NOTICE",
+          "menuAction": [
+            {
+              "scope": "notice",
+              "feature": "notice access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677767193c338",
+          "menuItem": "NOTIFICATION",
+          "menuAction": [
+            {
+              "scope": "notification",
+              "feature": "notification access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "user",
+              "feature": "user access",
+              "read": true
+            },
+            {
+              "scope": "userProfile",
+              "feature": "userProfile access",
+              "read": true
+            },
+            {
+              "scope": "userGroup",
+              "feature": "userGroup access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67729b693c339",
+          "menuItem": "PABX_ADMIN",
+          "menuAction": [
+            {
+              "scope": "sipuser",
+              "feature": "sipuser access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "pbxadmin",
+              "feature": "pbxadmin access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677a06093c33a",
+          "menuItem": "PABX_USER",
+          "menuAction": [
+            {
+              "scope": "pbxadmin",
+              "feature": "pbxadmin access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "pbxuser",
+              "feature": "pbxuser access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "sipuser",
+              "feature": "sipuser access",
+              "read": true
+            },
+            {
+              "scope": "schedule",
+              "feature": "schedule access",
+              "read": true
+            },
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67728d993c33b",
+          "menuItem": "PACKAGE_MANAGER",
+          "menuAction": [
+            {
+              "scope": "organisation",
+              "feature": "organisation access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677382f93c33c",
+          "menuItem": "PHONE_BOOK",
+          "menuAction": [
+            {
+              "scope": "contact",
+              "feature": "contact access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6775f2993c33d",
+          "menuItem": "PROFILE",
+          "menuAction": [
+            {
+              "scope": "userProfile",
+              "feature": "userProfile access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "sipuser",
+              "feature": "sipuser configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677ff4f93c33e",
+          "menuItem": "QA_FORM_DESIGNER",
+          "menuAction": [
+            {
+              "scope": "qualityassurance",
+              "feature": "qualityassurance access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6771e1293c33f",
+          "menuItem": "QA_FORM_SUBMISSION",
+          "menuAction": [
+            {
+              "scope": "qualityassurance",
+              "feature": "qualityassurance access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "cdr",
+              "feature": "cdr access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677616d93c340",
+          "menuItem": "QUALITYASSUARANCE_REPORT",
+          "menuAction": [
+            {
+              "scope": "qualityassurance",
+              "feature": "qualityassurance api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6777d5e93c341",
+          "menuItem": "QUEUE_HOURLY_BREAKDOWN_REPORT",
+          "menuAction": [
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true
+            },
+            {
+              "scope": "attribute",
+              "feature": "attribute access",
+              "read": true
+            },
+            {
+              "scope": "cdr",
+              "feature": "cdr access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677d70a93c342",
+          "menuItem": "QUEUE_SUMMARY",
+          "menuAction": [
+            {
+              "scope": "dashboardevent",
+              "feature": "dashboardevent access",
+              "read": true
+            },
+            {
+              "scope": "dashboardgraph",
+              "feature": "dashboardgraph access",
+              "read": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677602793c343",
+          "menuItem": "QUEUE_SUMMARY_REPORT",
+          "menuAction": [
+            {
+              "scope": "queue",
+              "feature": "queue access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67732e493c344",
+          "menuItem": "REPORT_EMAIL_CONFIG",
+          "menuAction": [
+            {
+              "scope": "template",
+              "feature": "template access",
+              "read": true
+            },
+            {
+              "scope": "user",
+              "feature": "user access",
+              "read": true
+            },
+            {
+              "scope": "cdr",
+              "feature": "cdr access",
+              "write": true,
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677f70493c345",
+          "menuItem": "RESOURCES",
+          "menuAction": [
+            {
+              "scope": "attribute",
+              "feature": "attribute configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "group",
+              "feature": "group configuration access",
+              "read": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "task",
+              "feature": "task configuration access",
+              "read": true
+            },
+            {
+              "scope": "resourcetaskattribute",
+              "feature": "resourcetaskattribute configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "user",
+              "feature": "user configuration access",
+              "read": true
+            },
+            {
+              "scope": "userProfile",
+              "feature": "userProfile configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6772cbf93c346",
+          "menuItem": "RING_GROUP_CONFIGURATION",
+          "menuAction": [
+            {
+              "scope": "sipuser",
+              "feature": "sipuser configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "group",
+              "feature": "group configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "enduser",
+              "feature": "enduser configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677364993c347",
+          "menuItem": "RULES",
+          "menuAction": [
+            {
+              "scope": "callrule",
+              "feature": "callrule configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "appreg",
+              "feature": "appreg configuration access",
+              "read": true
+            },
+            {
+              "scope": "trunk",
+              "feature": "trunk configuration access",
+              "read": true
+            },
+            {
+              "scope": "context",
+              "feature": "context configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6776f5893c348",
+          "menuItem": "SCHEDULER",
+          "menuAction": [
+            {
+              "scope": "schedule",
+              "feature": "schedule configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "appointment",
+              "feature": "appointment configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677408093c349",
+          "menuItem": "SIPUSER_CONFIGURATION",
+          "menuAction": [
+            {
+              "scope": "enduser",
+              "feature": "enduser configuration access",
+              "read": true
+            },
+            {
+              "scope": "sipuser",
+              "feature": "sipuser configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "context",
+              "feature": "context configuration access",
+              "read": true
+            },
+            {
+              "scope": "extension",
+              "feature": "extension configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677449c93c34a",
+          "menuItem": "SLA_BREAKDOWN",
+          "menuAction": [
+            {
+              "scope": "queue",
+              "feature": "queue configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677216b93c34b",
+          "menuItem": "TAGMANAGER",
+          "menuAction": [
+            {
+              "scope": "tag",
+              "feature": "tag configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6778f5293c34c",
+          "menuItem": "TEMPLATEMAKER",
+          "menuAction": [
+            {
+              "scope": "template",
+              "feature": "template configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67767ac93c34d",
+          "menuItem": "TICKET_ATTACHMENT_SLOT",
+          "menuAction": [
+            {
+              "scope": "ticket",
+              "feature": "ticket access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "tag",
+              "feature": "tag access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6774a0593c34e",
+          "menuItem": "TICKET_DASHBOARD",
+          "menuAction": [
+            {
+              "scope": "dashboardevent",
+              "feature": "dashboardevent configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "dashboardgraph",
+              "feature": "Dispatch configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677044793c34f",
+          "menuItem": "TICKET_DETAIL_REPORT",
+          "menuAction": [
+            {
+              "scope": "externalUser",
+              "feature": "externalUser access",
+              "read": true
+            },
+            {
+              "scope": "user",
+              "feature": "user access",
+              "read": true
+            },
+            {
+              "scope": "tag",
+              "feature": "tag access",
+              "read": true
+            },
+            {
+              "scope": "ticketstatusflow",
+              "feature": "ticketstatusflow access",
+              "read": true
+            },
+            {
+              "scope": "tickettypes",
+              "feature": "tickettypes access",
+              "read": true
+            },
+            {
+              "scope": "ticket",
+              "feature": "ticket access",
+              "read": true
+            },
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677f1e893c350",
+          "menuItem": "TICKET_FILTER",
+          "menuAction": [
+            {
+              "scope": "ticket",
+              "feature": "ticket access",
+              "read": true
+            },
+            {
+              "scope": "ticketview",
+              "feature": "ticketview access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677c26293c351",
+          "menuItem": "TICKET_FLOW",
+          "menuAction": [
+            {
+              "scope": "ticketstatusflow",
+              "feature": "ticketstatusflow access",
+              "read": true
+            },
+            {
+              "scope": "tickettypes",
+              "feature": "tickettypes access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6772d1693c352",
+          "menuItem": "TICKET_SLA",
+          "menuAction": [
+            {
+              "scope": "sla",
+              "feature": "sla configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "userGroup",
+              "feature": "userGroup configuration access",
+              "read": true
+            },
+            {
+              "scope": "user",
+              "feature": "user configuration access",
+              "read": true
+            },
+            {
+              "scope": "template",
+              "feature": "template configuration access",
+              "read": true
+            },
+            {
+              "scope": "requestmeta",
+              "feature": "requestmeta configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677a98393c353",
+          "menuItem": "TICKET_SUMMARY_REPORT",
+          "menuAction": [
+            {
+              "scope": "tag",
+              "feature": "tag access",
+              "read": true
+            },
+            {
+              "scope": "tickettypes",
+              "feature": "tickettypes access",
+              "read": true
+            },
+            {
+              "scope": "ticket",
+              "feature": "ticket access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677a41d93c354",
+          "menuItem": "TICKET_TRIGGER",
+          "menuAction": [
+            {
+              "scope": "triggers",
+              "feature": "triggers configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "userGroup",
+              "feature": "userGroup configuration access",
+              "read": true
+            },
+            {
+              "scope": "user",
+              "feature": "user configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677294993c355",
+          "menuItem": "TIME_SHEET_REPORT",
+          "menuAction": [
+            {
+              "scope": "user",
+              "feature": "user access",
+              "read": true
+            },
+            {
+              "scope": "timer",
+              "feature": "timer access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6774d8e93c356",
+          "menuItem": "TODO",
+          "menuAction": [
+            {
+              "scope": "todo",
+              "feature": "todo list access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "remind",
+              "feature": "remind configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6773aeb93c357",
+          "menuItem": "TRANSLATIONS",
+          "menuAction": [
+            {
+              "scope": "callrule",
+              "feature": "callrule configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677f8bc93c358",
+          "menuItem": "TWITTER",
+          "menuAction": [
+            {
+              "scope": "social",
+              "feature": "socials configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677040393c359",
+          "menuItem": "USERS",
+          "menuAction": [
+            {
+              "scope": "sipuser",
+              "feature": "sipuser configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "user",
+              "feature": "user configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "userScope",
+              "feature": "userScope configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "console",
+              "feature": "console configuration access",
+              "read": true
+            },
+            {
+              "scope": "userAppScope",
+              "feature": "userAppScope configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677820e93c35a",
+          "menuItem": "ZOHO_CRM",
+          "menuAction": [
+            {
+              "scope": "campaign",
+              "feature": "campaign access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67702e193c35b",
+          "menuItem": "ZOHO_CRM_USERS",
+          "menuAction": [
+            {
+              "scope": "campaign",
+              "feature": "campaign access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6779fa593c35c",
+          "menuItem": "AGENT_DIALER",
+          "menuAction": [
+            {
+              "scope": "agentDialer",
+              "feature": "agentDialer access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677963093c35d",
+          "menuItem": "AGENT_DIALER_DETAIL_REPORT",
+          "menuAction": [
+            {
+              "scope": "agentDialer",
+              "feature": "agentDialer access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677477593c35e",
+          "menuItem": "AGENT_DIALER_SUMMARY_REPORT",
+          "menuAction": [
+            {
+              "scope": "agentDialer",
+              "feature": "agentDialer access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67784ea93c35f",
+          "menuItem": "TICKET_TAG_WISE_SUMMARY_REPORT",
+          "menuAction": [
+            {
+              "scope": "tag",
+              "feature": "tag access",
+              "read": true
+            },
+            {
+              "scope": "ticket",
+              "feature": "ticket access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6775f3e93c360",
+          "menuItem": "CAMPAIGNMANAGER",
+          "menuAction": [
+            {
+              "scope": "campaign",
+              "feature": "campaign api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "Operations",
+              "feature": "Operations access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "campaignconfiguration",
+              "feature": "campaignconfiguration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "campaigncallbackreason",
+              "feature": "campaigncallbackreason access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "dialer",
+              "feature": "dialer api access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6772c5393c361",
+          "menuItem": "INTEGRATIONAPI_CONFIGURATION",
+          "menuAction": [
+            {
+              "scope": "integration",
+              "feature": "integration api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67714b493c362",
+          "menuItem": "AGENT_BREAKS",
+          "menuAction": [
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67755cc93c363",
+          "menuItem": "FILE_CAT_RESTRICT",
+          "menuAction": [
+            {
+              "scope": "fileservice",
+              "feature": "fileservice configuration access",
+              "read": true
+            },
+            {
+              "scope": "userfilecategory",
+              "feature": "userfilecategory configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "user",
+              "feature": "user configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677866393c364",
+          "menuItem": "SMS_DETAIL_REPORT",
+          "menuAction": [
+            {
+              "scope": "sms",
+              "feature": "sms configuration access",
+              "read": true
+            },
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677070a93c365",
+          "menuItem": "QUEUE_SETTINGS",
+          "menuAction": [
+            {
+              "scope": "queue",
+              "feature": "queue configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677d67193c366",
+          "menuItem": "CAMPAIGN_CDR",
+          "menuAction": [
+            {
+              "scope": "cdr",
+              "feature": "cdr configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677ee6893c367",
+          "menuItem": "INVITATIONS",
+          "menuAction": [
+            {
+              "scope": "user",
+              "feature": "user configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "myUserProfile",
+              "feature": "myUserProfile configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6770d0093c368",
+          "menuItem": "FILE_CAT_CONFIG",
+          "menuAction": [
+            {
+              "scope": "fileservice",
+              "feature": "fileservice configuration access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677381b93c369",
+          "menuItem": "CHATBOT",
+          "menuAction": []
+        },
+        {
+          "_id": "6a436787e2b677eb2693c36a",
+          "menuItem": "HOURLY_BAND_REPORT",
+          "menuAction": [
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true
+            },
+            {
+              "scope": "attribute",
+              "feature": "attribute access",
+              "read": true
+            },
+            {
+              "scope": "cdr",
+              "feature": "cdr access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6772b0893c36b",
+          "menuItem": "USERDETAIL",
+          "menuAction": [
+            {
+              "scope": "userGroup",
+              "feature": "userGroup access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677f91693c36c",
+          "menuItem": "KNOWLEDGE_PORTAL",
+          "menuAction": [
+            {
+              "scope": "article",
+              "feature": "article api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677652a93c36d",
+          "menuItem": "EVENT_TRIGGER",
+          "menuAction": []
+        },
+        {
+          "_id": "6a436787e2b67742cb93c36e",
+          "menuItem": "ABANDONED_CALL_REPORT",
+          "menuAction": [
+            {
+              "scope": "cdr",
+              "feature": "cdr report",
+              "read": true
+            }
+          ]
+        },
+        {
+          "menuItem": "CRM",
+          "menuAction": [
+            {
+              "scope": "crm",
+              "feature": "customer search access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "_id": "6a43670924069770a9a78ad8",
+      "consoleName": "AGENT_CONSOLE",
+      "menus": [
+        {
+          "_id": "6a436787e2b677cf0f93c36f",
+          "menuItem": "NOTIFICATION",
+          "menuAction": [
+            {
+              "scope": "notification",
+              "feature": "notification access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677619593c370",
+          "menuItem": "AGENT_PRODUCTIVITY",
+          "menuAction": [
+            {
+              "scope": "productivity",
+              "feature": "productivity configuration access",
+              "read": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677757b93c371",
+          "menuItem": "SOCIAL_CONNECTOR",
+          "menuAction": [
+            {
+              "scope": "social",
+              "feature": "socials configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67716ec93c372",
+          "menuItem": "TODO",
+          "menuAction": [
+            {
+              "scope": "todo",
+              "feature": "todo list access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "remind",
+              "feature": "remind configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67730ba93c373",
+          "menuItem": "QUALITYASSUARANCE",
+          "menuAction": [
+            {
+              "scope": "qualityassurance",
+              "feature": "qualityassurance api access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677c78093c374",
+          "menuItem": "MYPROFILE",
+          "menuAction": [
+            {
+              "scope": "myUserProfile",
+              "feature": "myUserProfile access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "sipuser",
+              "feature": "sipuser configuration access",
+              "read": true
+            },
+            {
+              "scope": "fileservice",
+              "feature": "fileservice access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "contact",
+              "feature": "contact api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6770fa193c375",
+          "menuItem": "NOTICE",
+          "menuAction": [
+            {
+              "scope": "notice",
+              "feature": "notice access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677802e93c376",
+          "menuItem": "AGENT_WIDGET",
+          "menuAction": [
+            {
+              "scope": "dialer",
+              "feature": "dialer access",
+              "write": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "requestmeta",
+              "feature": "requestmeta configuration access",
+              "read": true
+            },
+            {
+              "scope": "template",
+              "feature": "template access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "sysmonitoring",
+              "feature": "sysmonitoring configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "Dispatch",
+              "feature": "Dispatchaccess",
+              "write": true,
+              "read": true
+            },
+            {
+              "scope": "breaktype",
+              "feature": "breaktype access",
+              "read": true
+            },
+            {
+              "scope": "agentDialer",
+              "feature": "agentDialer access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "extension",
+              "feature": "extension access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677af7c93c377",
+          "menuItem": "TICKET",
+          "menuAction": [
+            {
+              "scope": "fileservice",
+              "feature": "fileservice configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "externalUser",
+              "feature": "externalUser configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "userGroup",
+              "feature": "userGroup configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "user",
+              "feature": "user configuration access",
+              "read": true
+            },
+            {
+              "scope": "ticket",
+              "feature": "ticket configuration access",
+              "read": true,
+              "write": true
+            },
+            {
+              "scope": "tag",
+              "feature": "tag configuration access",
+              "read": true
+            },
+            {
+              "scope": "timer",
+              "feature": "timer configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "ticketview",
+              "feature": "ticketview configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "forms",
+              "feature": "forms configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "tickettypes",
+              "feature": "tickettypes configuration access",
+              "read": true
+            },
+            {
+              "scope": "ticketstatusflow",
+              "feature": "ticketstatusflow configuration access",
+              "read": true
+            },
+            {
+              "scope": "engagement",
+              "feature": "engagement configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "inbox",
+              "feature": "inbox configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "events",
+              "feature": "events configuration access",
+              "read": true
+            },
+            {
+              "scope": "integration",
+              "feature": "integration api access",
+              "read": true,
+              "write": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677a86393c378",
+          "menuItem": "AGENT_DASHBOARD",
+          "menuAction": [
+            {
+              "scope": "dashboardevent",
+              "feature": "dashboardevent configuration access",
+              "read": true,
+              "write": true,
+              "delete": true
+            },
+            {
+              "scope": "dashboardgraph",
+              "feature": "dashboardgraph configuration access",
+              "read": true
+            },
+            {
+              "scope": "ardsresource",
+              "feature": "ardsresource configuration access",
+              "read": true
+            },
+            {
+              "scope": "queue",
+              "feature": "queue configuration access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677eedf93c379",
+          "menuItem": "KNOWLEDGE_PORTAL",
+          "menuAction": [
+            {
+              "scope": "article",
+              "feature": "article api access",
+              "read": true,
+              "write": true,
+              "delete": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677151c93c37a",
+          "menuItem": "AGENT_AGENT_DASHBOARD",
+          "menuAction": [
+            {
+              "scope": "AgentConsoleMenu",
+              "feature": "AgentConsoleMenu",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677454e93c37b",
+          "menuItem": "AGENT_NEWPROFILE",
+          "menuAction": [
+            {
+              "scope": "AgentConsoleMenu",
+              "feature": "AgentConsoleMenu",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6773e0193c37c",
+          "menuItem": "AGENT_ENGAGEMENTSESSION",
+          "menuAction": [
+            {
+              "scope": "AgentConsoleMenu",
+              "feature": "AgentConsoleMenu",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677eb6093c37d",
+          "menuItem": "AGENT_SOFTPHONE_DIALER",
+          "menuAction": [
+            {
+              "scope": "AgentConsoleMenu",
+              "feature": "AgentConsoleMenu",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677e56f93c37e",
+          "menuItem": "AGENT_CONTACT_LIST",
+          "menuAction": [
+            {
+              "scope": "AgentConsoleMenu",
+              "feature": "AgentConsoleMenu",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677c0a893c37f",
+          "menuItem": "AGENT_NOTES",
+          "menuAction": [
+            {
+              "scope": "AgentConsoleMenu",
+              "feature": "AgentConsoleMenu",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677b39393c380",
+          "menuItem": "AGENT_TICKETINBOX",
+          "menuAction": [
+            {
+              "scope": "AgentConsoleMenu",
+              "feature": "AgentConsoleMenu",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b67768dc93c381",
+          "menuItem": "AGENT_TIMETRACKER",
+          "menuAction": [
+            {
+              "scope": "AgentConsoleMenu",
+              "feature": "AgentConsoleMenu",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b677715793c382",
+          "menuItem": "AGENT_SOFTPHONE",
+          "menuAction": [
+            {
+              "scope": "SoftPhone",
+              "feature": "SoftPhone access",
+              "read": true
+            },
+            {
+              "scope": "SoftPhone_dialer",
+              "feature": "SoftPhone_dialer access",
+              "read": true
+            }
+          ]
+        },
+        {
+          "_id": "6a436787e2b6772eb593c383",
+          "menuItem": "ABANDONED_CALL_REPORT",
+          "menuAction": [
+            {
+              "scope": "cdr",
+              "feature": "cdr report",
+              "read": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "__v": 0
+}
