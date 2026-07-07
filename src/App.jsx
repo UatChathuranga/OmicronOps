@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TerminalTab from './TerminalTab';
 import SplitTab from './SplitTab';
+import MonitoringTab from './MonitoringTab';
 import './App.css';
 import { destroySession } from './sessionRegistry';
 import pkg from '../package.json';
@@ -98,6 +99,7 @@ export default function App() {
     privateKey: '',
     passphrase: '',
     group: 'Default',
+    persistentMonitoring: false,
     services: {
       postgres: { enabled: false, port: '5432', database: '', username: 'postgres', password: '' },
       mongo: { enabled: false, port: '27017', database: 'admin', username: '', password: '' },
@@ -217,6 +219,82 @@ export default function App() {
     }
   };
 
+  const [notifications, setNotifications] = useState([]);
+
+  // Subscribe to global alerts WebSocket
+  useEffect(() => {
+    let ws = null;
+    let reconnectTimeout = null;
+
+    const connectAlertsWs = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const url = `${protocol}//${host}/ws`;
+
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'global-alerts-init' }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'vm-utilization-spike-notification') {
+            const toastId = Date.now().toString() + Math.random().toString(36).substring(7);
+            const newNotif = {
+              id: toastId,
+              connectionId: msg.data.connectionId,
+              connectionName: msg.data.connectionName,
+              spikeType: msg.data.spike_type,
+              description: msg.data.description,
+              timestamp: msg.data.timestamp
+            };
+            setNotifications(prev => {
+              const isDuplicate = prev.some(n => n.connectionId === newNotif.connectionId && n.spikeType === newNotif.spikeType && n.description === newNotif.description);
+              if (isDuplicate) return prev;
+              return [newNotif, ...prev];
+            });
+          } else if (msg.type === 'vm-syslog-keyword-alert') {
+            const toastId = Date.now().toString() + Math.random().toString(36).substring(7);
+            const newNotif = {
+              id: toastId,
+              connectionId: msg.data.connectionId,
+              connectionName: msg.data.connectionName,
+              spikeType: 'syslog_alert',
+              description: `Keyword: "${msg.data.keyword}" | ${msg.data.line}`,
+              timestamp: msg.data.timestamp
+            };
+            setNotifications(prev => {
+              const isDuplicate = prev.some(n => n.connectionId === newNotif.connectionId && n.spikeType === newNotif.spikeType && n.description === newNotif.description);
+              if (isDuplicate) return prev;
+              return [newNotif, ...prev];
+            });
+          }
+        } catch (e) {
+          console.error('Error handling global alert message:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        // Retry connection after 5 seconds if closed
+        reconnectTimeout = setTimeout(connectAlertsWs, 5000);
+      };
+
+      ws.onerror = (err) => {
+        console.error('Global alerts WS error:', err);
+        ws.close();
+      };
+    };
+
+    connectAlertsWs();
+
+    return () => {
+      if (ws) ws.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    };
+  }, []);
+
   useEffect(() => {
     fetchConnections();
     fetchMacros();
@@ -266,6 +344,7 @@ export default function App() {
       privateKey: '',
       passphrase: '',
       group: 'Default',
+      persistentMonitoring: false,
       services: {
         postgres: { enabled: false, port: '5432', database: '', username: 'postgres', password: '' },
         mongo: { enabled: false, port: '27017', database: 'admin', username: '', password: '' },
@@ -293,6 +372,7 @@ export default function App() {
       privateKey: conn.privateKey || '',
       passphrase: conn.passphrase || '',
       group: conn.group || 'Default',
+      persistentMonitoring: !!conn.persistentMonitoring,
       services: {
         postgres: {
           enabled: !!conn.services?.postgres?.enabled,
@@ -444,9 +524,29 @@ export default function App() {
   };
 
   // Tab operations
+  const handleOpenMonitoringTab = (conn) => {
+    const existing = tabs.find(t => t.connectionId === conn.id && t.type === 'monitoring');
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+
+    const newTabId = `monitoring-${Date.now()}`;
+    const newTab = {
+      id: newTabId,
+      title: `${conn.name} Monitor`,
+      type: 'monitoring',
+      connectionId: conn.id,
+      status: 'connecting'
+    };
+
+    setTabs([...tabs, newTab]);
+    setActiveTabId(newTabId);
+  };
+
   const handleOpenTab = (conn) => {
-    // Check if tab already exists for this connection to prevent duplicates
-    const existing = tabs.find(t => t.connectionId === conn.id);
+    // Check if terminal tab already exists for this connection to prevent duplicates
+    const existing = tabs.find(t => t.connectionId === conn.id && t.type === 'terminal');
     if (existing) {
       setActiveTabId(existing.id);
       return;
@@ -965,6 +1065,25 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Toast Notifications Stack */}
+      <div className="global-toast-container">
+        {notifications.map((n) => (
+          <div key={n.id} className={`global-toast ${n.spikeType}`}>
+            <div className="toast-header">
+              <span className="toast-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px' }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                Spike Alert
+              </span>
+              <span className="toast-time">{n.timestamp}</span>
+              <button className="toast-close" onClick={() => setNotifications(prev => prev.filter(item => item.id !== n.id))}>×</button>
+            </div>
+            <div className="toast-body">
+              <strong>{n.connectionName}</strong>: {n.description}
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* SIDEBAR */}
       <div className={`sidebar glass-panel ${isSidebarVisible ? '' : 'hidden'}`}>
         <div className="sidebar-header">
@@ -1091,6 +1210,15 @@ export default function App() {
                             </div>
                           </div>
                           <div className="conn-actions">
+                            <button
+                              className="conn-action-btn"
+                              onClick={(e) => { e.stopPropagation(); handleOpenMonitoringTab(conn); }}
+                              title="Open Monitoring Dashboard"
+                            >
+                              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                              </svg>
+                            </button>
                             <button
                               className="conn-action-btn"
                               onClick={(e) => handleOpenEditModal(conn, e)}
@@ -1368,6 +1496,14 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+              ) : tab.type === 'monitoring' ? (
+                <MonitoringTab
+                  tab={tab}
+                  connections={connections}
+                  isActive={activeTabId === tab.id}
+                  onOpenTerminal={handleOpenTab}
+                  onRefreshConnections={fetchConnections}
+                />
               ) : tab.type === 'split' ? (
                 <SplitTab
                   tab={tab}
@@ -1520,6 +1656,19 @@ export default function App() {
                         />
                       )}
                     </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="persistentMonitoring"
+                      checked={formData.persistentMonitoring || false}
+                      onChange={(e) => setFormData({ ...formData, persistentMonitoring: e.target.checked })}
+                      style={{ width: 'auto', margin: 0, cursor: 'pointer' }}
+                    />
+                    <label htmlFor="persistentMonitoring" className="form-label" style={{ marginBottom: 0, cursor: 'pointer', userSelect: 'none' }}>
+                      Enable Persistent Background Monitoring (Keep Listening)
+                    </label>
                   </div>
 
                   <div className="form-group" style={{ marginBottom: '14px' }}>

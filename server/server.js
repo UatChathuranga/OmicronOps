@@ -1,6 +1,6 @@
 import express from 'express';
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,6 +8,8 @@ import { Client as SSHClient } from 'ssh2';
 import pg from 'pg';
 import net from 'net';
 import fs from 'fs';
+import os from 'os';
+import sqlite3 from 'sqlite3';
 
 let MongoClient;
 let ObjectId;
@@ -39,6 +41,8 @@ import {
   createSavedMongoQuery,
   deleteSavedMongoQuery
 } from './db.js';
+import * as DockerModel from './models/dockerModel.js';
+import * as DockerController from './controllers/dockerController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -190,6 +194,7 @@ app.post('/api/connections', (req, res) => {
       }
     }
     const newConn = createConnection(req.body);
+    handleConnectionConfigChange(newConn.id);
     res.status(201).json(newConn);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -220,6 +225,7 @@ app.put('/api/connections/:id', (req, res) => {
     }
     const updated = updateConnection(req.params.id, req.body);
     if (!updated) return res.status(404).json({ error: 'Connection not found' });
+    handleConnectionConfigChange(req.params.id);
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -230,6 +236,7 @@ app.delete('/api/connections/:id', (req, res) => {
   try {
     const success = deleteConnection(req.params.id);
     if (!success) return res.status(404).json({ error: 'Connection not found' });
+    handleConnectionConfigChange(req.params.id);
     res.json({ message: 'Connection deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -413,6 +420,254 @@ app.post('/api/sftp/rename', (req, res) => {
       sftp.end();
       if (err) return res.status(500).json({ error: `Rename failed: ${err.message}` });
       res.json({ success: true });
+    });
+  });
+});
+
+// Server Monitoring API endpoint
+app.post('/api/monitoring/exec', (req, res) => {
+  const { tabId, connectionId, commands } = req.body;
+  if (!commands || !Array.isArray(commands)) {
+    return res.status(400).json({ error: 'commands array is required' });
+  }
+
+  // 1. Try to use Go Agent if connected
+  if (connectionId && activeAgents.has(connectionId)) {
+    const agentWs = activeAgents.get(connectionId);
+    if (agentWs && agentWs.readyState === 1) { // OPEN
+      const reqId = Date.now().toString() + '_' + Math.random().toString(36).substring(7);
+      
+      const timeoutId = setTimeout(() => {
+        server.removeAllListeners(`agent_result_${reqId}`);
+        res.status(504).json({ error: 'Agent execution timeout' });
+      }, 10000);
+
+      server.once(`agent_result_${reqId}`, (msg) => {
+        clearTimeout(timeoutId);
+        res.json({ success: true, results: msg.results, source: 'agent' });
+      });
+
+      agentWs.send(JSON.stringify({
+        type: 'exec',
+        reqId: reqId,
+        commands: commands
+      }));
+      return;
+    }
+  }
+
+  // 2. Fallback to SSH polling if no agent is connected
+  if (!tabId) {
+    return res.status(400).json({ error: 'tabId is required for SSH fallback' });
+  }
+
+  const client = activeSessions.get(tabId);
+  if (!client) {
+    return res.status(400).json({ error: 'Active connection session not found. Agent is offline and SSH is disconnected.' });
+  }
+
+  // Combine commands into a single script to minimize overhead
+  const script = commands.join('; echo "---OM_SEP---"; ');
+  
+  client.exec(script, (err, stream) => {
+    if (err) {
+      return res.status(500).json({ error: `Failed to execute monitoring script: ${err.message}` });
+    }
+    
+    let stdout = '';
+    let stderr = '';
+    
+    stream.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    stream.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    stream.on('close', (code) => {
+      const results = stdout.split('---OM_SEP---').map(s => s.trim());
+      res.json({ success: true, results, stderr, code, source: 'ssh' });
+    });
+  });
+});
+
+// Get VM spikes log
+app.get('/api/monitoring/spikes', (req, res) => {
+  const { connectionId } = req.query;
+  if (!connectionId) {
+    return res.status(400).json({ error: 'connectionId is required' });
+  }
+  const db = getDbInstance(connectionId);
+  db.all(`SELECT id, datetime(timestamp, 'localtime') as timestamp, cpu_usage, load_avg_1, mem_percent, disk_percent, spike_type, description 
+          FROM vm_utilization_spikes 
+          ORDER BY timestamp DESC LIMIT 50`, (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.json({ success: true, spikes: rows || [] });
+  });
+});
+
+// Get VM metrics history
+app.get('/api/monitoring/history', (req, res) => {
+  const { connectionId } = req.query;
+  if (!connectionId) {
+    return res.status(400).json({ error: 'connectionId is required' });
+  }
+  const db = getDbInstance(connectionId);
+  db.all(`SELECT cpu_usage as cpu, mem_percent as mem, disk_percent as disk, datetime(timestamp, 'localtime') as timestamp 
+          FROM vm_resource_utilization_info 
+          ORDER BY timestamp DESC LIMIT 60`, (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.json({ success: true, history: (rows || []).reverse() });
+  });
+});
+
+// Get VM docker status/containers
+app.get('/api/monitoring/docker', DockerController.getDockerStatus);
+
+function getLocalIp() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+}
+
+// Deploy Go Agent API (Streaming)
+app.post('/api/agent/deploy', (req, res) => {
+  const { tabId, connectionId, wsUrl, deployAsRoot } = req.body;
+  if (!tabId || !connectionId || !wsUrl) {
+    return res.status(400).end('tabId, connectionId, and wsUrl are required');
+  }
+
+
+
+
+  const client = activeSessions.get(tabId);
+  if (!client) {
+    return res.status(400).end('Active connection session not found.');
+  }
+
+  const agentBinaryPath = path.join(__dirname, '../agent/omicron-agent-linux-amd64');
+  
+  if (!fs.existsSync(agentBinaryPath)) {
+    return res.status(500).end('Agent binary not found on the server. Please compile it first.');
+  }
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.write('Starting deployment process...\n');
+
+  client.sftp((err, sftp) => {
+    if (err) {
+      res.write(`Error: Failed to start SFTP session: ${err.message}\n`);
+      return res.end('Deploy failed\n');
+    }
+
+    const remoteBinDir = deployAsRoot ? '/opt/omicron-ops' : '.local/bin';
+    const remoteAgentPath = `${remoteBinDir}/omicron-agent`;
+    const remoteAgentTmpPath = `${remoteBinDir}/omicron-agent.tmp`;
+    const systemdDir = deployAsRoot ? '/etc/systemd/system' : '~/.config/systemd/user';
+    const systemctlCmd = deployAsRoot ? 'systemctl' : 'systemctl --user';
+    const execStartPath = deployAsRoot ? remoteAgentPath : `%h/${remoteAgentPath}`;
+    
+    // Command to create directories, stop service, overwrite binary, and restart
+    const deployScript = `
+      echo "Creating directories..."
+      mkdir -p ${remoteBinDir}
+      mkdir -p ${systemdDir}
+
+      echo "Stopping old agent service if running..."
+      ${systemctlCmd} stop omicron-agent.service || true
+      
+      echo "Overwriting agent binary..."
+      mv -f ${remoteAgentTmpPath} ${remoteAgentPath}
+      
+      echo "Writing systemd service file..."
+      cat << 'EOF' > ${systemdDir}/omicron-agent.service
+[Unit]
+Description=OmicronOps Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${execStartPath} -port 44333 -token ${connectionId}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+      
+      echo "Reloading systemd daemon..."
+      ${systemctlCmd} daemon-reload
+      
+      echo "Enabling and starting service..."
+      ${systemctlCmd} enable --now omicron-agent.service
+      
+      ${deployAsRoot ? '' : `echo "Enabling linger for user..."\n      loginctl enable-linger $USER`}
+      
+      echo "Checking service status..."
+      ${systemctlCmd} status omicron-agent --no-pager || true
+    `;
+
+    res.write(`Uploading agent binary to temporary path ~/${remoteAgentTmpPath}...\n`);
+    // 1. Upload binary
+    sftp.mkdir(remoteBinDir, (mkdirErr) => {
+      // Ignore mkdir error if it already exists
+      let lastPercent = -1;
+      sftp.fastPut(agentBinaryPath, remoteAgentTmpPath, {
+        step: (total_transferred, chunk, total) => {
+          const percent = Math.floor((total_transferred / total) * 100);
+          if (percent % 25 === 0 && percent !== lastPercent) {
+            res.write(`Upload progress: ${percent}%\n`);
+            lastPercent = percent;
+          }
+        }
+      }, (putErr) => {
+        if (putErr) {
+          res.write(`Error: Failed to upload agent binary: ${putErr.message}\n`);
+          return res.end('Deploy failed\n');
+        }
+        
+        res.write('Upload complete. Setting executable permissions on temp binary...\n');
+        // 2. Make executable
+        sftp.chmod(remoteAgentTmpPath, 0o755, (chmodErr) => {
+          if (chmodErr) {
+            res.write(`Error: Failed to make agent executable: ${chmodErr.message}\n`);
+            return res.end('Deploy failed\n');
+          }
+
+          res.write('Permissions set. Executing deployment script...\n');
+          // 3. Execute deploy script
+          client.exec(deployScript, (execErr, stream) => {
+            if (execErr) {
+              res.write(`Error: Failed to execute deploy script: ${execErr.message}\n`);
+              return res.end('Deploy failed\n');
+            }
+
+            stream.on('data', (d) => res.write(d.toString()));
+            stream.stderr.on('data', (d) => res.write(d.toString()));
+
+            stream.on('close', (code) => {
+              if (code !== 0) {
+                res.write(`Deploy script failed with code ${code}\n`);
+                return res.end('Deploy failed\n');
+              }
+              res.write('\nAgent deployed successfully!\n');
+              res.end('DONE');
+            });
+          });
+        });
+      });
     });
   });
 });
@@ -2757,8 +3012,12 @@ app.get('*', (req, res, next) => {
 // Create HTTP server
 const server = createServer(app);
 
-// Attach WebSocket server
+// Attach WebSocket servers
 const wss = new WebSocketServer({ noServer: true });
+const agentWss = new WebSocketServer({ noServer: true });
+
+// Connected remote agents (Go clients)
+const activeAgents = new Map(); // token -> ws connection
 
 server.on('upgrade', (request, socket, head) => {
   const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
@@ -2770,6 +3029,363 @@ server.on('upgrade', (request, socket, head) => {
     socket.destroy();
   }
 });
+
+const desiredConnections = new Map(); // connectionId -> { host, persistent: boolean, tabOpen: boolean, reconnectTimer: timer }
+const activeTabConnections = new Map(); // connectionId -> Set of ws connections
+const globalAlertsConnections = new Set(); // Set of ws connections for global alerts
+
+function getDbInstance(connectionId) {
+  const dbDir = path.join(__dirname, '../data/metrics');
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+  const dbPath = path.join(dbDir, `${connectionId}.sqlite`);
+  const db = new sqlite3.Database(dbPath);
+  
+  // Enable WAL mode for better concurrency and write performance
+  db.run('PRAGMA journal_mode = WAL');
+
+  db.serialize(() => {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS vm_resource_utilization_info (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        cpu_usage REAL,
+        load_avg_1 REAL,
+        mem_total INTEGER,
+        mem_used INTEGER,
+        mem_percent REAL,
+        disk_total INTEGER,
+        disk_used INTEGER,
+        disk_percent REAL
+      )
+    `);
+    
+    db.run(`
+      CREATE TABLE IF NOT EXISTS vm_utilization_spikes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        cpu_usage REAL,
+        load_avg_1 REAL,
+        mem_percent REAL,
+        disk_percent REAL,
+        spike_type TEXT,
+        description TEXT
+      )
+    `);
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_utilization_timestamp ON vm_resource_utilization_info(timestamp)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_spikes_timestamp ON vm_utilization_spikes(timestamp)`);
+    db.run(`CREATE INDEX IF NOT EXISTS idx_spikes_type_timestamp ON vm_utilization_spikes(spike_type, timestamp)`);
+    DockerModel.initDockerTables(db).catch(err => console.error('Failed to init docker tables:', err));
+  });
+
+  return db;
+}
+
+function processMetrics(db, d, connectionId) {
+  db.run(`INSERT INTO vm_resource_utilization_info (cpu_usage, load_avg_1, mem_total, mem_used, mem_percent, disk_total, disk_used, disk_percent) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+    [d.cpu_usage, d.load_avg_1, d.mem_total, d.mem_used, d.mem_percent, d.disk_total, d.disk_used, d.disk_percent], 
+    function(err) {
+      if (err) {
+        console.error('SQLite insert error:', err);
+        return;
+      }
+      
+      const newId = this.lastID;
+      
+      // Delete old records (keep last 10 minutes)
+      db.run(`DELETE FROM vm_resource_utilization_info WHERE timestamp < datetime('now', '-10 minutes')`, (err) => {
+        if (err) console.error('SQLite cleanup error:', err);
+      });
+
+      const checkAndInsertSpike = (spikeType, description) => {
+        db.get(`SELECT id FROM vm_utilization_spikes WHERE spike_type = ? AND timestamp >= datetime('now', '-5 minutes') LIMIT 1`, [spikeType], (err, row) => {
+          if (err) {
+            console.error('SQLite query last spike error:', err);
+            return;
+          }
+          if (!row) {
+            db.run(`INSERT INTO vm_utilization_spikes (cpu_usage, load_avg_1, mem_percent, disk_percent, spike_type, description)
+                    VALUES (?, ?, ?, ?, ?, ?)`,
+              [d.cpu_usage, d.load_avg_1, d.mem_percent, d.disk_percent, spikeType, description],
+              (err) => {
+                if (err) {
+                  console.error('SQLite insert spike error:', err);
+                } else {
+                  console.log(`[ALERT] Spike logged for ${connectionId}: ${description}`);
+                  // Find connection name for display
+                  let connectionName = connectionId;
+                  const conn = getConnectionById(connectionId, false);
+                  if (conn && conn.name) connectionName = conn.name;
+
+                  // Only broadcast if showAlertNotifications is enabled (default true)
+                  if (conn?.showAlertNotifications !== false) {
+                    // Broadcast global notification to all open UI sockets
+                    globalAlertsConnections.forEach((client) => {
+                      if (client.readyState === 1) { // OPEN
+                        client.send(JSON.stringify({
+                          type: 'vm-utilization-spike-notification',
+                          data: {
+                            connectionId: connectionId,
+                            connectionName: connectionName,
+                            spike_type: spikeType,
+                            description: description,
+                            cpu_usage: d.cpu_usage,
+                            mem_percent: d.mem_percent,
+                            disk_percent: d.disk_percent,
+                            timestamp: new Date().toLocaleTimeString()
+                          }
+                        }));
+                      }
+                    });
+                  }
+                }
+              }
+            );
+          }
+        });
+      };
+
+      // Thresholds: CPU > 85%, Mem > 85%, Disk > 90%
+      if (d.cpu_usage > 85) {
+        checkAndInsertSpike('high_cpu', `High CPU utilization: ${d.cpu_usage.toFixed(1)}%`);
+      }
+      if (d.mem_percent > 85) {
+        checkAndInsertSpike('high_mem', `High Memory utilization: ${d.mem_percent.toFixed(1)}%`);
+      }
+      if (d.disk_percent > 90) {
+        checkAndInsertSpike('high_disk', `High Disk utilization: ${d.disk_percent.toFixed(1)}%`);
+      }
+
+      // Check CPU relative spike compared to past 30s avg (minimum 30% utilization & +20% jump)
+      db.get(`SELECT AVG(cpu_usage) as avg_cpu FROM vm_resource_utilization_info 
+              WHERE timestamp >= datetime('now', '-30 seconds') AND id != ?`, [newId], (err, row) => {
+        if (err) {
+          console.error('SQLite query avg CPU error:', err);
+          return;
+        }
+        if (row && row.avg_cpu !== null) {
+          const avgCpu = row.avg_cpu;
+          if (d.cpu_usage >= avgCpu + 20 && d.cpu_usage >= 30) {
+            checkAndInsertSpike('cpu_spike', `CPU utilization spike detected: ${d.cpu_usage.toFixed(1)}% (previous 30s avg: ${avgCpu.toFixed(1)}%)`);
+          }
+        }
+      });
+    }
+  );
+}
+
+function establishConnection(connectionId) {
+  const desired = desiredConnections.get(connectionId);
+  if (!desired) return;
+
+  if (desired.reconnectTimer) {
+    clearTimeout(desired.reconnectTimer);
+    desired.reconnectTimer = null;
+  }
+
+  // If already active and open, do nothing
+  if (activeAgents.has(connectionId)) {
+    const existingWs = activeAgents.get(connectionId);
+    if (existingWs.readyState === WebSocket.OPEN) {
+      return;
+    }
+  }
+
+  const agentWsUrl = `ws://${desired.host}:44333/ws/agent`;
+  console.log(`Dialing agent at ${agentWsUrl}`);
+
+  const ws = new WebSocket(agentWsUrl);
+  activeAgents.set(connectionId, ws);
+
+  const db = getDbInstance(connectionId);
+
+  ws.on('open', () => {
+    console.log(`Connected to agent: ${connectionId}`);
+    ws.send(JSON.stringify({ type: 'auth', token: connectionId }));
+  });
+
+  ws.on('message', (message) => {
+    try {
+      const msg = JSON.parse(message);
+      if (msg.type === 'auth_success') {
+        console.log(`Agent authenticated: ${connectionId}`);
+        const current = desiredConnections.get(connectionId);
+        if (current && msg.version) {
+          current.version = msg.version;
+        }
+      } else if (msg.type === 'exec_result') {
+        server.emit(`agent_result_${connectionId}`, msg);
+      } else if (msg.type === 'vm-resource-utilization-info') {
+        const d = msg.data;
+        if (d) {
+          const current = desiredConnections.get(connectionId);
+          if (current) {
+            d.version = msg.version || current.version;
+          } else {
+            d.version = msg.version;
+          }
+          processMetrics(db, d, connectionId);
+          server.emit(`agent_metrics_${connectionId}`, d);
+        }
+      } else if (msg.type === 'docker-status') {
+        const data = msg.data;
+        if (data) {
+          DockerController.handleAgentDockerStatus(connectionId, data);
+          server.emit(`agent_docker_status_${connectionId}`, data);
+        }
+      } else if (msg.type === 'syslog-line') {
+        const line = msg.data;
+        if (line) {
+          const conn = getConnectionById(connectionId, false);
+          const keywordsStr = conn?.syslogKeywords || 'error,critical,panic,fatal,failed';
+          const keywords = keywordsStr.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+          const lowerLine = line.toLowerCase();
+          
+          const matchedKeyword = keywords.find(kw => lowerLine.includes(kw));
+          if (matchedKeyword) {
+            let connectionName = connectionId;
+            if (conn && conn.name) connectionName = conn.name;
+            
+            const db = getDbInstance(connectionId);
+            const alertDesc = `Syslog Alert [Keyword: ${matchedKeyword}]: ${line}`;
+            
+            // Limit logging and broadcasting syslog alerts for the same keyword to once per minute
+            db.get(
+              `SELECT id FROM vm_utilization_spikes 
+               WHERE spike_type = 'syslog_alert' AND description LIKE ? AND timestamp >= datetime('now', '-1 minute') 
+               LIMIT 1`,
+              [`%Keyword: ${matchedKeyword}%`],
+              (err, row) => {
+                if (err) {
+                  console.error('SQLite query last syslog alert error:', err);
+                  return;
+                }
+                if (!row) {
+                  db.run(
+                    `INSERT INTO vm_utilization_spikes (cpu_usage, load_avg_1, mem_percent, disk_percent, spike_type, description)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [0, 0, 0, 0, 'syslog_alert', alertDesc],
+                    (err) => {
+                      if (err) console.error('Failed to log syslog alert to DB:', err);
+                    }
+                  );
+
+                  // Broadcast syslog alert to all open UI sockets (if notifications enabled)
+                  if (conn?.showAlertNotifications !== false) {
+                    globalAlertsConnections.forEach((client) => {
+                      if (client.readyState === 1) { // OPEN
+                        client.send(JSON.stringify({
+                          type: 'vm-syslog-keyword-alert',
+                          data: {
+                            connectionId: connectionId,
+                            connectionName: connectionName,
+                            keyword: matchedKeyword,
+                            line: line,
+                            timestamp: new Date().toLocaleTimeString()
+                          }
+                        }));
+                      }
+                    });
+                  }
+                }
+              }
+            );
+          }
+        }
+      }
+    } catch (e) {}
+  });
+
+  ws.on('close', () => {
+    activeAgents.delete(connectionId);
+    console.log(`Agent disconnected: ${connectionId}`);
+    
+    const current = desiredConnections.get(connectionId);
+    if (current && (current.persistent || current.tabOpen)) {
+      console.log(`Reconnecting to agent ${connectionId} in 5s...`);
+      current.reconnectTimer = setTimeout(() => {
+        establishConnection(connectionId);
+      }, 5000);
+    }
+  });
+
+  ws.on('error', (err) => {
+    console.error(`Agent connection error (${connectionId}):`, err.message);
+    ws.close();
+  });
+}
+
+function handleConnectionConfigChange(connId) {
+  const conn = getConnectionById(connId, false);
+  if (!conn) {
+    const desired = desiredConnections.get(connId);
+    if (desired) {
+      if (desired.reconnectTimer) clearTimeout(desired.reconnectTimer);
+      desiredConnections.delete(connId);
+    }
+    const ws = activeAgents.get(connId);
+    if (ws) ws.close();
+    return;
+  }
+
+  const desired = desiredConnections.get(connId);
+  const isPersistent = !!conn.persistentMonitoring;
+
+  if (isPersistent) {
+    if (!desired) {
+      desiredConnections.set(connId, {
+        host: conn.host,
+        persistent: true,
+        tabOpen: false,
+        reconnectTimer: null
+      });
+      establishConnection(connId);
+    } else {
+      desired.host = conn.host;
+      desired.persistent = true;
+      establishConnection(connId);
+    }
+  } else {
+    if (desired) {
+      desired.persistent = false;
+      desired.host = conn.host;
+      if (!desired.tabOpen) {
+        if (desired.reconnectTimer) clearTimeout(desired.reconnectTimer);
+        desiredConnections.delete(connId);
+        const ws = activeAgents.get(connId);
+        if (ws) ws.close();
+      }
+    }
+  }
+}
+
+// Create connection endpoint for agent
+app.post('/api/agent/connect', async (req, res) => {
+  const { host, connectionId } = req.body;
+  if (!host || !connectionId) {
+    return res.status(400).json({ success: false, error: 'host and connectionId required' });
+  }
+
+  let desired = desiredConnections.get(connectionId);
+  if (!desired) {
+    const conn = getConnectionById(connectionId, false);
+    const persistent = conn ? !!conn.persistentMonitoring : false;
+    desired = { host, persistent, tabOpen: true, reconnectTimer: null };
+    desiredConnections.set(connectionId, desired);
+  } else {
+    desired.host = host;
+    desired.tabOpen = true;
+  }
+
+  establishConnection(connectionId);
+  return res.json({ success: true });
+});
+
+// wss is still used for frontend terminal connections
+
 
 wss.on('connection', (ws) => {
   let sshClient = null;
@@ -2788,10 +3404,71 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(message);
 
+      if (msg.type === 'global-alerts-init') {
+        globalAlertsConnections.add(ws);
+        ws.on('close', () => {
+          globalAlertsConnections.delete(ws);
+        });
+        return;
+      }
+
       if (msg.type === 'init') {
         if (connectionEstablished) return;
 
         sessionTabId = msg.tabId;
+        const connectionId = msg.connectionId;
+        
+        // Listen for agent metrics specifically for this connection
+        const metricsListener = (data) => {
+          if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ type: 'vm-resource-utilization-info', data, source: 'agent' }));
+          }
+        };
+
+        const dockerListener = (data) => {
+          if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ type: 'vm-docker-status', data }));
+          }
+        };
+        
+        if (connectionId) {
+          if (!activeTabConnections.has(connectionId)) {
+            activeTabConnections.set(connectionId, new Set());
+          }
+          activeTabConnections.get(connectionId).add(ws);
+
+          server.on(`agent_metrics_${connectionId}`, metricsListener);
+          server.on(`agent_docker_status_${connectionId}`, dockerListener);
+          
+          ws.on('close', () => {
+            server.off(`agent_metrics_${connectionId}`, metricsListener);
+            server.off(`agent_docker_status_${connectionId}`, dockerListener);
+            
+            const wsSet = activeTabConnections.get(connectionId);
+            if (wsSet) {
+              wsSet.delete(ws);
+              if (wsSet.size === 0) {
+                activeTabConnections.delete(connectionId);
+                
+                const desired = desiredConnections.get(connectionId);
+                if (desired) {
+                  desired.tabOpen = false;
+                  if (!desired.persistent) {
+                    console.log(`No active tabs and not persistent. Closing agent connection: ${connectionId}`);
+                    if (desired.reconnectTimer) {
+                      clearTimeout(desired.reconnectTimer);
+                    }
+                    desiredConnections.delete(connectionId);
+                    const agentWs = activeAgents.get(connectionId);
+                    if (agentWs) {
+                      agentWs.close();
+                    }
+                  }
+                }
+              }
+            }
+          });
+        }
 
         let config = {};
 
@@ -2949,6 +3626,31 @@ wss.on('connection', (ws) => {
         if (sshStream) {
           sshStream.setWindow(msg.rows, msg.cols, 0, 0);
         }
+      } else if (msg.type === 'docker-action') {
+        const { action, containerId, connectionId } = msg;
+        if (connectionId && activeAgents.has(connectionId)) {
+          const agentWs = activeAgents.get(connectionId);
+          if (agentWs && agentWs.readyState === 1) {
+            agentWs.send(JSON.stringify({
+              type: 'docker-action',
+              action,
+              containerId
+            }));
+          }
+        }
+      } else if (msg.type === 'docker-deploy') {
+        const { name, image, ports, connectionId } = msg;
+        if (connectionId && activeAgents.has(connectionId)) {
+          const agentWs = activeAgents.get(connectionId);
+          if (agentWs && agentWs.readyState === 1) {
+            agentWs.send(JSON.stringify({
+              type: 'docker-deploy',
+              name,
+              image,
+              ports
+            }));
+          }
+        }
       }
     } catch (err) {
       console.error('Error handling WebSocket message:', err);
@@ -3001,6 +3703,26 @@ export const serverStarted = new Promise((resolve) => {
       console.log(`OmicronOps Server is running on port ${actualPort}`);
       console.log(`Open http://localhost:${actualPort} in your browser`);
       console.log(`====================================================`);
+
+      // Read persistent connections and connect to their agents in background
+      try {
+        const connections = getDecryptedConnections();
+        for (const conn of connections) {
+          if (conn.persistentMonitoring) {
+            console.log(`Starting persistent background monitoring for: ${conn.name} (${conn.host})`);
+            desiredConnections.set(conn.id, {
+              host: conn.host,
+              persistent: true,
+              tabOpen: false,
+              reconnectTimer: null
+            });
+            establishConnection(conn.id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to start persistent background connections:', err);
+      }
+
       resolve(actualPort);
     });
     

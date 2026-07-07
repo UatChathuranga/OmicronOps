@@ -200,6 +200,9 @@ export function createConnection(connData) {
     username: connData.username || 'root',
     authMethod: connData.authMethod || 'password', // 'password' or 'key'
     group: connData.group || 'Default',
+    persistentMonitoring: !!connData.persistentMonitoring,
+    syslogKeywords: connData.syslogKeywords || 'error,critical,panic,fatal,failed',
+    showAlertNotifications: connData.showAlertNotifications !== undefined ? !!connData.showAlertNotifications : true,
     created: new Date().toISOString(),
     services: {
       postgres: {
@@ -349,6 +352,9 @@ export function updateConnection(id, connUpdate) {
   existing.username = connUpdate.username ?? existing.username;
   existing.authMethod = connUpdate.authMethod ?? existing.authMethod;
   existing.group = connUpdate.group ?? existing.group;
+  existing.persistentMonitoring = connUpdate.persistentMonitoring !== undefined ? !!connUpdate.persistentMonitoring : existing.persistentMonitoring;
+  existing.syslogKeywords = connUpdate.syslogKeywords !== undefined ? connUpdate.syslogKeywords : existing.syslogKeywords;
+  existing.showAlertNotifications = connUpdate.showAlertNotifications !== undefined ? !!connUpdate.showAlertNotifications : existing.showAlertNotifications;
   existing.updated = new Date().toISOString();
 
   // For services: merge updates
