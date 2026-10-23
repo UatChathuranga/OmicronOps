@@ -7,7 +7,6 @@ import { fileURLToPath } from 'url';
 import { Client as SSHClient } from 'ssh2';
 import pg from 'pg';
 import net from 'net';
-import fs from 'fs';
 
 let MongoClient;
 let ObjectId;
@@ -70,7 +69,7 @@ export function getCredentialsForPort(port) {
 }
 
 const app = express();
-const port = process.env.PORT || 0;
+const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -2991,12 +2990,6 @@ export const serverStarted = new Promise((resolve) => {
     
     tempServer.once('listening', () => {
       const actualPort = server.address().port;
-      global.serverPort = actualPort;
-      try {
-        fs.writeFileSync(path.join(__dirname, '.port'), String(actualPort));
-      } catch (err) {
-        console.error('Failed to write port file:', err);
-      }
       console.log(`====================================================`);
       console.log(`OmicronOps Server is running on port ${actualPort}`);
       console.log(`Open http://localhost:${actualPort} in your browser`);

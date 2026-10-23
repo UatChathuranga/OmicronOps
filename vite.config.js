@@ -1,23 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Read dynamic port from server/.port, defaulting to 3000 if not found
-let targetPort = 3000;
-try {
-  const portFile = path.join(__dirname, 'server', '.port');
-  if (fs.existsSync(portFile)) {
-    targetPort = parseInt(fs.readFileSync(portFile, 'utf8').trim(), 10) || 3000;
-  }
-} catch (e) {
-  console.warn('Vite config could not read dynamic server port, using default 3000:', e.message);
-}
-
+// The API/WS server uses a fixed port (PORT env var overrides it).
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -25,11 +9,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: `http://localhost:${targetPort}`,
+        target: 'http://localhost:3000',
         changeOrigin: true
       },
       '/ws': {
-        target: `ws://localhost:${targetPort}`,
+        target: 'ws://localhost:3000',
         ws: true
       }
     }
