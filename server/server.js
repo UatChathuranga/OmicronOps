@@ -7,7 +7,6 @@ import { fileURLToPath } from 'url';
 import { Client as SSHClient } from 'ssh2';
 import pg from 'pg';
 import net from 'net';
-import fs from 'fs';
 
 let MongoClient;
 let ObjectId;
@@ -70,7 +69,7 @@ export function getCredentialsForPort(port) {
 }
 
 const app = express();
-const port = process.env.PORT || 0;
+const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -333,6 +332,54 @@ app.get('/api/sftp/download', (req, res) => {
         sftp.end();
       });
       readStream.pipe(res);
+    });
+  });
+});
+
+app.get('/api/sftp/download-folder', (req, res) => {
+  const { tabId, path: remotePath } = req.query;
+  if (!tabId || !remotePath) return res.status(400).json({ error: 'tabId and path are required' });
+  const client = activeSessions.get(tabId);
+  if (!client) return res.status(400).json({ error: 'Session not found' });
+
+  // Archive on the remote host and stream it back, so nested folders need no recursive SFTP walk.
+  const shellQuote = (value) => `'${value.replace(/'/g, `'\\''`)}'`;
+  const parent = path.posix.dirname(remotePath);
+  const base = path.posix.basename(remotePath);
+  const cmd = `tar -czf - -C ${shellQuote(parent)} ${shellQuote('./' + base)}`;
+
+  client.exec(cmd, (err, stream) => {
+    if (err) return res.status(500).json({ error: `Failed to start folder archive: ${err.message}` });
+
+    let stderr = '';
+    let started = false;
+    stream.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    stream.on('data', (chunk) => {
+      if (!started) {
+        started = true;
+        const filename = `${base}.tar.gz`;
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+        res.setHeader('Content-Type', 'application/gzip');
+      }
+      if (!res.write(chunk)) stream.pause();
+    });
+    stream.on('close', (code) => {
+      if (code !== 0) {
+        console.error('SFTP folder archive failed:', stderr.trim() || `tar exited with code ${code}`);
+        if (!started) return res.status(500).json({ error: `Failed to archive folder: ${stderr.trim() || `tar exited with code ${code}`}` });
+        return res.destroy();
+      }
+      res.end();
+    });
+    stream.on('error', (streamErr) => {
+      console.error('SFTP folder archive stream error:', streamErr);
+      if (!started) res.status(500).json({ error: `Folder download failed: ${streamErr.message}` });
+      else res.destroy();
+    });
+    res.on('drain', () => stream.resume());
+    res.on('close', () => {
+      if (!res.writableEnded) stream.close();
     });
   });
 });
@@ -2991,12 +3038,6 @@ export const serverStarted = new Promise((resolve) => {
     
     tempServer.once('listening', () => {
       const actualPort = server.address().port;
-      global.serverPort = actualPort;
-      try {
-        fs.writeFileSync(path.join(__dirname, '.port'), String(actualPort));
-      } catch (err) {
-        console.error('Failed to write port file:', err);
-      }
       console.log(`====================================================`);
       console.log(`OmicronOps Server is running on port ${actualPort}`);
       console.log(`Open http://localhost:${actualPort} in your browser`);
