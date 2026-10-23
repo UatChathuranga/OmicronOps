@@ -7,17 +7,35 @@ export default function SftpExplorer({ tabId }) {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  const [transferState, setTransferState] = useState(null);
+  const [transfers, setTransfers] = useState([]);
 
-  const uploadXhrRef = useRef(null);
-  const downloadXhrRef = useRef(null);
+  const transferIdRef = useRef(0);
+  const xhrsRef = useRef(new Map());
 
   useEffect(() => {
     return () => {
-      if (uploadXhrRef.current) uploadXhrRef.current.abort();
-      if (downloadXhrRef.current) downloadXhrRef.current.abort();
+      xhrsRef.current.forEach((xhr) => xhr.abort());
+      xhrsRef.current.clear();
     };
   }, []);
+
+  const addTransfer = (transfer) => {
+    setTransfers((prev) => [...prev, transfer]);
+  };
+
+  const updateTransfer = (id, patch) => {
+    setTransfers((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  };
+
+  const removeTransfer = (id) => {
+    setTransfers((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const cancelTransfer = (id) => {
+    const xhr = xhrsRef.current.get(id);
+    if (xhr) xhr.abort();
+    else removeTransfer(id);
+  };
   
   const fileInputRef = useRef(null);
 
@@ -72,106 +90,111 @@ export default function SftpExplorer({ tabId }) {
   };
 
   const handleDownload = (file) => {
-    if (transferState) return;
+    const isDir = file.isDir;
+    const filename = isDir ? `${file.name}.tar.gz` : file.name;
+    const remoteFilePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
+    const url = `/api/sftp/${isDir ? 'download-folder' : 'download'}?tabId=${encodeURIComponent(tabId)}&path=${encodeURIComponent(remoteFilePath)}`;
+    const id = ++transferIdRef.current;
 
-    setTransferState({
+    addTransfer({
+      id,
       type: 'download',
-      filename: file.name,
-      progress: 0,
+      filename,
+      progress: isDir ? null : 0,
       loaded: 0,
-      total: file.size
+      total: isDir ? null : file.size,
+      status: 'active'
     });
 
-    const remoteFilePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-    const url = `/api/sftp/download?tabId=${encodeURIComponent(tabId)}&path=${encodeURIComponent(remoteFilePath)}`;
-
     const xhr = new XMLHttpRequest();
-    downloadXhrRef.current = xhr;
+    xhrsRef.current.set(id, xhr);
 
     xhr.open('GET', url, true);
     xhr.responseType = 'blob';
 
     xhr.addEventListener('progress', (e) => {
-      if (e.lengthComputable) {
-        const percent = Math.round((e.loaded / e.total) * 100);
-        setTransferState(prev => prev ? { ...prev, progress: percent, loaded: e.loaded, total: e.total } : null);
+      if (isDir) {
+        updateTransfer(id, { loaded: e.loaded });
+      } else if (e.lengthComputable) {
+        updateTransfer(id, { progress: Math.round((e.loaded / e.total) * 100), loaded: e.loaded, total: e.total });
       } else {
-        setTransferState(prev => prev ? { ...prev, loaded: e.loaded, total: file.size, progress: Math.min(99, Math.round((e.loaded / (file.size || 1)) * 100)) } : null);
+        updateTransfer(id, { loaded: e.loaded, progress: Math.min(99, Math.round((e.loaded / (file.size || 1)) * 100)) });
       }
     });
 
     xhr.onload = () => {
+      xhrsRef.current.delete(id);
       if (xhr.status >= 200 && xhr.status < 300) {
-        const blob = xhr.response;
-        const downloadUrl = window.URL.createObjectURL(blob);
+        const downloadUrl = window.URL.createObjectURL(xhr.response);
         const a = document.createElement('a');
         a.href = downloadUrl;
-        a.download = file.name;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         window.URL.revokeObjectURL(downloadUrl);
-        setTransferState(null);
-        downloadXhrRef.current = null;
+        updateTransfer(id, { status: 'done', progress: 100 });
+        setTimeout(() => removeTransfer(id), 1500);
       } else {
-        alert('Download failed');
-        setTransferState(null);
-        downloadXhrRef.current = null;
+        const reader = new FileReader();
+        reader.onload = () => {
+          let message = 'Download failed';
+          try {
+            message = JSON.parse(reader.result).error || message;
+          } catch (_) {}
+          updateTransfer(id, { status: 'error', error: message });
+        };
+        reader.readAsText(xhr.response);
       }
     };
 
     xhr.onerror = () => {
-      alert('Download failed due to network error.');
-      setTransferState(null);
-      downloadXhrRef.current = null;
+      xhrsRef.current.delete(id);
+      updateTransfer(id, { status: 'error', error: 'Download failed due to network error.' });
     };
 
     xhr.onabort = () => {
-      setTransferState(null);
-      downloadXhrRef.current = null;
+      xhrsRef.current.delete(id);
+      removeTransfer(id);
     };
 
     xhr.send();
   };
 
-  const handleCancelDownload = () => {
-    if (downloadXhrRef.current) {
-      downloadXhrRef.current.abort();
-    }
-  };
-
   const handleUploadFile = (file) => {
     if (!file) return;
-    if (transferState) return;
 
-    setTransferState({
+    const remoteFilePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
+    const url = `/api/sftp/upload?tabId=${encodeURIComponent(tabId)}&path=${encodeURIComponent(remoteFilePath)}`;
+    const id = ++transferIdRef.current;
+
+    addTransfer({
+      id,
       type: 'upload',
       filename: file.name,
       progress: 0,
       loaded: 0,
-      total: file.size
+      total: file.size,
+      status: 'active'
     });
 
-    const remoteFilePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
-    const url = `/api/sftp/upload?tabId=${encodeURIComponent(tabId)}&path=${encodeURIComponent(remoteFilePath)}`;
-
     const xhr = new XMLHttpRequest();
-    uploadXhrRef.current = xhr;
+    xhrsRef.current.set(id, xhr);
 
     xhr.open('POST', url, true);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {
-        const percent = Math.round((e.loaded / e.total) * 100);
-        setTransferState(prev => prev ? { ...prev, progress: percent, loaded: e.loaded } : null);
+        updateTransfer(id, { progress: Math.round((e.loaded / e.total) * 100), loaded: e.loaded });
       }
     });
 
     xhr.onload = () => {
+      xhrsRef.current.delete(id);
       if (xhr.status >= 200 && xhr.status < 300) {
-        setTransferState(null);
-        uploadXhrRef.current = null;
+        updateTransfer(id, { status: 'done', progress: 100 });
+        setTimeout(() => removeTransfer(id), 1500);
         fetchDirectory(currentPath);
       } else {
         let errMsg = 'Upload failed';
@@ -179,30 +202,21 @@ export default function SftpExplorer({ tabId }) {
           const res = JSON.parse(xhr.responseText);
           errMsg = res.error || errMsg;
         } catch (_) {}
-        alert(errMsg);
-        setTransferState(null);
-        uploadXhrRef.current = null;
+        updateTransfer(id, { status: 'error', error: errMsg });
       }
     };
 
     xhr.onerror = () => {
-      alert('Upload failed due to network error.');
-      setTransferState(null);
-      uploadXhrRef.current = null;
+      xhrsRef.current.delete(id);
+      updateTransfer(id, { status: 'error', error: 'Upload failed due to network error.' });
     };
 
     xhr.onabort = () => {
-      setTransferState(null);
-      uploadXhrRef.current = null;
+      xhrsRef.current.delete(id);
+      removeTransfer(id);
     };
 
     xhr.send(file);
-  };
-
-  const handleCancelUpload = () => {
-    if (uploadXhrRef.current) {
-      uploadXhrRef.current.abort();
-    }
   };
 
   const handleFileInputChange = (e) => {
@@ -329,31 +343,47 @@ export default function SftpExplorer({ tabId }) {
       onDragLeave={handleDrag}
       onDrop={handleDrop}
     >
-      {/* Transfer progress overlay */}
-      {transferState && (
-        <div className="sftp-overlay glass-panel">
-          <div className="sftp-progress-card glass-panel">
-            <div className="sftp-progress-title">
-              {transferState.type === 'upload' ? 'Uploading' : 'Downloading'} {transferState.filename}
+      {/* Transfer indicators */}
+      {transfers.length > 0 && (
+        <div className="sftp-transfers">
+          {transfers.map((transfer) => (
+            <div key={transfer.id} className="sftp-transfer glass-panel">
+              <div className="sftp-transfer-header">
+                <span className="sftp-transfer-name" title={transfer.filename}>
+                  {transfer.type === 'upload' ? '↑ Uploading' : '↓ Downloading'} {transfer.filename}
+                </span>
+                <button
+                  className="sftp-transfer-close"
+                  onClick={() => cancelTransfer(transfer.id)}
+                  title={transfer.status === 'active' ? 'Cancel' : 'Dismiss'}
+                >
+                  ×
+                </button>
+              </div>
+              {transfer.status === 'error' ? (
+                <div className="sftp-transfer-error">{transfer.error}</div>
+              ) : (
+                <>
+                  <div className="sftp-progress-bar-container">
+                    {transfer.progress === null ? (
+                      <div className="sftp-progress-bar sftp-progress-indeterminate" />
+                    ) : (
+                      <div className="sftp-progress-bar" style={{ width: `${transfer.progress}%` }} />
+                    )}
+                  </div>
+                  <div className="sftp-progress-details">
+                    <span>
+                      {transfer.status === 'done' ? 'Done' : transfer.progress === null ? 'Archiving…' : `${transfer.progress}%`}
+                    </span>
+                    <span>
+                      {formatSize(transfer.loaded)}
+                      {transfer.total ? ` / ${formatSize(transfer.total)}` : ''}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="sftp-progress-bar-container">
-              <div 
-                className="sftp-progress-bar" 
-                style={{ width: `${transferState.progress}%` }} 
-              />
-            </div>
-            <div className="sftp-progress-details">
-              <span>{transferState.progress}%</span>
-              <span>{formatSize(transferState.loaded)} / {formatSize(transferState.total)}</span>
-            </div>
-            <button 
-              className="action-btn btn-secondary cancel-btn" 
-              onClick={transferState.type === 'upload' ? handleCancelUpload : handleCancelDownload}
-              style={{ width: '100%', marginTop: '12px' }}
-            >
-              Cancel
-            </button>
-          </div>
+          ))}
         </div>
       )}
 
@@ -443,7 +473,7 @@ export default function SftpExplorer({ tabId }) {
           </div>
         )}
 
-        {loading && !transferState && (
+        {loading && (
           <div className="sftp-loading">
             <div className="spinner"></div>
             <p>Loading files...</p>
@@ -490,17 +520,15 @@ export default function SftpExplorer({ tabId }) {
                       <td>{file.isDir ? '-' : formatSize(file.size)}</td>
                       <td>{formatDate(file.mtime)}</td>
                       <td className="actions-col">
-                        {!file.isDir && (
-                          <button 
-                            className="sftp-icon-btn" 
-                            onClick={() => handleDownload(file)} 
-                            title="Download"
-                          >
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                          </button>
-                        )}
+                        <button 
+                          className="sftp-icon-btn" 
+                          onClick={() => handleDownload(file)} 
+                          title={file.isDir ? 'Download folder (.tar.gz)' : 'Download'}
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </button>
                         <button 
                           className="sftp-icon-btn" 
                           onClick={() => handleRename(file)} 
